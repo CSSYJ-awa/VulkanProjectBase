@@ -1,6 +1,25 @@
 {
-    "exe_name": "VulkanApp",
-    "window_title": "VulkanApp (MinGW + GLFW + GLM)",
-    "window_width": 800,
-    "window_height": 600
+    "exe_name": "GraphicsEngine",
+    "window_title": "Graphics Engine (Vulkan + MinGW)",
+    "window_width": 1280,
+    "window_height": 720,
+    "ui_config": "ui_config.json",
+    // "stretch" = 画面随窗口拉伸；"letterbox" = 保持比例，空白填充
+    "aspect_mode": "letterbox",
+    "sources": [
+        "src/main.cpp",
+        "src/vulkan_app.cpp",
+        "src/engine/vulkan_context.cpp",
+        "src/engine/vulkan_util.cpp",
+        "src/engine/pipelines.cpp",
+        "src/shapes/shape.cpp",
+        "src/geometry3d/mesh3d.cpp",
+        "src/text/bitmap_font.cpp",
+        "src/text/text_renderer.cpp",
+        "src/ui/ui_widgets.cpp",
+        "src/ui/ui_manager.cpp",
+        "src/ui/ui_loader.cpp",
+        "src/ui/ui_json.cpp"
+    ],
+    "extra_libraries": []
 }

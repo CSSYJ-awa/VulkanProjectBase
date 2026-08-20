@@ -33,7 +33,13 @@ static void setupConsoleEncoding()
 {
 #ifdef _WIN32
     // 设置 C 标准库区域为 UTF-8，使 multibyte <-> wide char 转换正确
-    std::setlocale(LC_ALL, ".UTF-8");
+    // 尝试多种 locale 名称：不同 Windows 版本可能命名不同
+    const char* locales[] = { ".UTF-8", ".utf8", "en_US.UTF-8", nullptr };
+    for (int i = 0; locales[i]; ++i)
+    {
+        if (std::setlocale(LC_ALL, locales[i]) != nullptr)
+            break;
+    }
 
     // 将控制台输出代码页设为 UTF-8 (65001)
     // 所有 std::cout / std::cerr / printf 输出的 UTF-8 中文将正确显示
@@ -51,8 +57,19 @@ static void setupConsoleEncoding()
         std::cerr << "[警告] SetConsoleCP(CP_UTF8) 失败，错误码: " << err << std::endl;
     }
 #else
-    // Linux/macOS: 设置 UTF-8 locale，确保 wide char 函数正常工作
-    std::setlocale(LC_ALL, "en_US.UTF-8");
+    // Linux/macOS: 设置 UTF-8 locale，按优先级尝试，全部失败则不改变
+    const char* locales[] = { "en_US.UTF-8", "C.UTF-8", "POSIX.UTF-8", "zh_CN.UTF-8", nullptr };
+    bool found = false;
+    for (int i = 0; locales[i]; ++i)
+    {
+        if (std::setlocale(LC_ALL, locales[i]) != nullptr)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        std::cerr << "[警告] 未找到 UTF-8 locale，控制台输出可能乱码" << std::endl;
 #endif
 }
 

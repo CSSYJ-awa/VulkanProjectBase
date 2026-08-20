@@ -1,0 +1,79 @@
+{
+    "ui": {
+        "type": "panel",
+        "name": "main_panel",
+        "x": 880,
+        "y": 40,
+        "width": 380,
+        "height": 640,
+        "draggable": true,
+        "color": [0.12, 0.12, 0.18, 0.85],
+        "children": [
+            {
+                "type": "text",
+                "name": "panel_title",
+                "x": 16,
+                "y": 12,
+                "width": 200,
+                "height": 24,
+                "text": "UI DEMO PANEL",
+                "font_size": 16,
+                "color": [1.0, 0.9, 0.2, 0.0]
+            },
+            {
+                "type": "button",
+                "name": "btn_hello",
+                "x": 16,
+                "y": 50,
+                "width": 160,
+                "height": 36,
+                "text": "HELLO",
+                "font_size": 14,
+                "color": [0.3, 0.5, 0.8, 1.0]
+            },
+            {
+                "type": "button",
+                "name": "btn_quit",
+                "x": 200,
+                "y": 50,
+                "width": 160,
+                "height": 36,
+                "text": "QUIT",
+                "font_size": 14,
+                "color": [0.8, 0.3, 0.3, 1.0]
+            },
+            {
+                "type": "text",
+                "name": "label_input",
+                "x": 16,
+                "y": 110,
+                "width": 300,
+                "height": 24,
+                "text": "TYPE BELOW:",
+                "font_size": 14,
+                "color": [0.8, 0.8, 0.8, 0.0]
+            },
+            {
+                "type": "textbox",
+                "name": "input",
+                "x": 16,
+                "y": 140,
+                "width": 340,
+                "height": 36,
+                "text": "click then type",
+                "font_size": 14
+            },
+            {
+                "type": "text",
+                "name": "help",
+                "x": 16,
+                "y": 200,
+                "width": 340,
+                "height": 200,
+                "text": "ESC TO EXIT",
+                "font_size": 12,
+                "color": [0.6, 0.6, 0.6, 0.0]
+            }
+        ]
+    }
+}

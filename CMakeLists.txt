@@ -153,10 +153,139 @@ endif()
 message(STATUS "[Config] exe_name = ${APP_EXE_NAME}")
 
 # ============================================================================
+# 从 config.json 解析 JSON 字符串数组（兼容 CMake 3.15）
+# 输入：_CONFIG_JSON, 键名 → 输出变量
+# ============================================================================
+function(_parse_json_string_array result_var json_content key)
+    # [^]] 匹配除 ] 外的任意字符（] 紧跟 [^ 表示字面 ]）
+    set(_pattern "\"${key}\"[ \t]*:[ \t]*\\[([^]]*)\\]")
+    if(json_content MATCHES "${_pattern}")
+        set(_arr "${CMAKE_MATCH_1}")
+        string(REPLACE "\"" "" _arr "${_arr}")
+        string(REPLACE " " "" _arr "${_arr}")
+        string(REPLACE "\n" "" _arr "${_arr}")
+        string(REPLACE "\r" "" _arr "${_arr}")
+        string(REPLACE "\t" "" _arr "${_arr}")
+        string(REPLACE "," ";" _arr "${_arr}")
+        set(_result "")
+        foreach(_item ${_arr})
+            if(NOT _item STREQUAL "")
+                list(APPEND _result "${_item}")
+            endif()
+        endforeach()
+        set(${result_var} "${_result}" PARENT_SCOPE)
+    else()
+        set(${result_var} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+# ---- 解析 sources（编译源文件列表）----
+_parse_json_string_array(CONFIG_SOURCES "${_CONFIG_JSON}" "sources")
+if(CONFIG_SOURCES)
+    # 将相对路径转为绝对路径
+    set(APP_SOURCES "")
+    foreach(_src ${CONFIG_SOURCES})
+        list(APPEND APP_SOURCES "${CMAKE_SOURCE_DIR}/${_src}")
+    endforeach()
+    message(STATUS "[Config] sources = ${CONFIG_SOURCES}")
+else()
+    set(APP_SOURCES "")
+    message(STATUS "[Config] sources 为空，回退到 GLOB_RECURSE")
+endif()
+
+# ---- 解析 extra_libraries（额外链接库）----
+_parse_json_string_array(CONFIG_EXTRA_LIBS "${_CONFIG_JSON}" "extra_libraries")
+if(CONFIG_EXTRA_LIBS)
+    message(STATUS "[Config] extra_libraries = ${CONFIG_EXTRA_LIBS}")
+else()
+    message(STATUS "[Config] extra_libraries = (空)")
+endif()
+
+# ============================================================================
+# 着色器编译：把 src/shaders/*.vert / *.frag 编译为 .spv
+# 优先使用 Vulkan SDK 自带的 glslangValidator；找不到则尝试 glslc。
+# 输出 .spv 到 ${CMAKE_BINARY_DIR}/shaders/，并在 post-build 复制到 bin/shaders。
+# ============================================================================
+set(SHADER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/shaders")
+set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/shaders")
+
+find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslangValidator.exe
+    HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/Bin32"
+          "$ENV{VULKAN_SDK}/glslangValidator"
+    DOC "GLSL -> SPIR-V 编译器（Vulkan SDK 自带）")
+
+if(GLSLANG_VALIDATOR)
+    message(STATUS "[Shader] 使用 glslangValidator: ${GLSLANG_VALIDATOR}")
+else()
+    find_program(GLSLC glslc)
+    if(GLSLC)
+        message(STATUS "[Shader] 使用 glslc: ${GLSLC}")
+    else()
+        message(WARNING
+            "未找到 glslangValidator 或 glslc，无法编译着色器。"
+            "请确保 Vulkan SDK 已安装并设置 VULKAN_SDK 环境变量。")
+    endif()
+endif()
+
+set(SHADER_SOURCES
+    "${SHADER_SOURCE_DIR}/basic.vert"
+    "${SHADER_SOURCE_DIR}/basic.frag"
+    "${SHADER_SOURCE_DIR}/mesh3d.vert"
+    "${SHADER_SOURCE_DIR}/mesh3d.frag"
+    "${SHADER_SOURCE_DIR}/text.vert"
+    "${SHADER_SOURCE_DIR}/text.frag"
+)
+
+set(SHADER_TARGETS "")
+foreach(SRC ${SHADER_SOURCES})
+    get_filename_component(SRC_NAME ${SRC} NAME)
+    get_filename_component(SRC_EXT ${SRC} LAST_EXT)
+    string(REPLACE ".vert" ".vert.spv" SPV_NAME "${SRC_NAME}")
+    string(REPLACE ".frag" ".frag.spv" SPV_NAME "${SPV_NAME}")
+    set(SPV "${SHADER_BINARY_DIR}/${SPV_NAME}")
+
+    if(GLSLANG_VALIDATOR)
+        add_custom_command(
+            OUTPUT "${SPV}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V -o "${SPV}" "${SRC}"
+            DEPENDS "${SRC}"
+            COMMENT "[Shader] 编译 ${SRC_NAME} -> ${SPV_NAME}"
+            VERBATIM
+        )
+    elseif(GLSLC)
+        add_custom_command(
+            OUTPUT "${SPV}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+            COMMAND "${GLSLC}" -o "${SPV}" "${SRC}"
+            DEPENDS "${SRC}"
+            COMMENT "[Shader] 编译 ${SRC_NAME} -> ${SPV_NAME}"
+            VERBATIM
+        )
+    endif()
+
+    list(APPEND SHADER_TARGETS "${SPV}")
+endforeach()
+
+if(GLSLANG_VALIDATOR OR GLSLC)
+    add_custom_target(compile_shaders ALL DEPENDS ${SHADER_TARGETS})
+endif()
+
+# ============================================================================
 # 可执行文件
 # ============================================================================
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-add_executable(${PROJECT_NAME} ${SOURCES})
+# 源文件列表由 config.json 的 sources 数组驱动；为空时回退到 GLOB_RECURSE
+if(APP_SOURCES)
+    set(APP_COMPILE_SOURCES ${APP_SOURCES})
+else()
+    file(GLOB_RECURSE APP_COMPILE_SOURCES "src/*.cpp")
+endif()
+add_executable(${PROJECT_NAME} ${APP_COMPILE_SOURCES})
+
+# 着色器编译必须在可执行文件之前完成
+if(TARGET compile_shaders)
+    add_dependencies(${PROJECT_NAME} compile_shaders)
+endif()
 
 # 可执行文件输出到 bin/，文件名取自 config.json 的 exe_name
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -170,6 +299,26 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         "${CONFIG_FILE}"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
     COMMENT "[Config] 复制 config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
+)
+
+# ---- post-build: 复制 ui_config.json 到 exe 输出目录 ----
+if(EXISTS "${CMAKE_SOURCE_DIR}/ui_config.json")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/ui_config.json"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/ui_config.json"
+        COMMENT "[UI] 复制 ui_config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/ui_config.json"
+    )
+endif()
+
+# ---- post-build: 复制编译后的 .spv 到 bin/shaders/ ----
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${SHADER_BINARY_DIR}"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
+    COMMENT "[Shader] 复制 SPIR-V → $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
 )
 
 # ---- 若 MinGW 导入库自动生成目标存在，将其设为编译前置依赖 ----
@@ -213,15 +362,20 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     gdi32                   # 3. Windows GDI（GLFW 静态库依赖）
     opengl32                # 4. OpenGL（GLFW 静态库依赖）
     m                       # 5. 数学库
+    ${CONFIG_EXTRA_LIBS}    # 6. config.json 中 extra_libraries 指定的额外库
 )
 
 # --- 编译定义 ---
 # GLFW_INCLUDE_NONE: 禁止 GLFW 自动包含 OpenGL 头文件，
 # 避免与 Vulkan 的 vk_platform.h 产生类型重定义冲突（MinGW 常见问题）。
 # 使用 Vulkan 时应在源码中显式 #include <vulkan/vulkan.h>。
+# NOGDI / WIN32_LEAN_AND_MEAN: 防止 windows.h 把 Rectangle / Polygon 等
+# GDI 函数名定义为宏，否则会与引擎中同名的图形类冲突。
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     VK_USE_PLATFORM_WIN32_KHR
     GLFW_INCLUDE_NONE
+    WIN32_LEAN_AND_MEAN
+    NOGDI
 )
 
 # ============================================================================
