@@ -1,0 +1,50 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) 启动 VulkanApp",
+            "type": "cppdbg",
+            "request": "launch",
+
+            // 可执行文件路径
+            "program": "${workspaceFolder}/build/VulkanApp.exe",
+
+            // 命令行参数
+            "args": [],
+
+            // 工作目录
+            "cwd": "${workspaceFolder}",
+
+            // ------------------------------------------------------------------
+            // 【关键】将 Vulkan SDK 的 Bin 目录注入 PATH
+            // 这样运行时能找到 vulkan-1.dll，避免 "找不到 vulkan-1.dll" 错误。
+            // 如果在 CMakeLists.txt 中已经配置了 POST_BUILD 复制 DLL，
+            // 则此环境变量仅作为双重保障。
+            // ------------------------------------------------------------------
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${env:VULKAN_SDK}\\Bin;${env:PATH}"
+                }
+            ],
+
+            // 调试器 —— 使用 MinGW 自带的 GDB
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb.exe",
+
+            // 启动前运行构建任务
+            "preLaunchTask": "CMake: build",
+
+            // 断点设置在 main 入口
+            "stopAtEntry": false,
+
+            // 外部控制台（Windows GUI 应用可设为 false）
+            "externalConsole": true,
+
+            // 日志输出
+            "logging": {
+                "moduleLoad": false
+            }
+        }
+    ]
+}

@@ -34,7 +34,7 @@ endif()
 # ---- 检查 VULKAN_SDK ----
 if(NOT DEFINED ENV{VULKAN_SDK})
     message(WARNING "[VULKAN] VULKAN_SDK 未设置，无法自动生成 MinGW 导入库。"
-                    "请手动运行 scripts/generate_vulkan_mingw_lib.bat。")
+                    "请运行 scripts/setup_env.ps1 完成环境部署。")
     return()
 endif()
 
@@ -61,32 +61,34 @@ if(NOT EXISTS "${VULKAN_DLL}")
 endif()
 
 # ---- 查找工具 ----
+# 复用 FindMSYS2 推断的根目录与子系统优先级，避免硬编码 msys64 路径。
+# 同时回退到环境变量与传统安装路径以兼容非 MSYS2 的 MinGW 发行版。
+include(cmake/FindMSYS2.cmake)
+
+set(_VULKAN_TOOL_PATHS "")
+if(MSYS2_FOUND)
+    foreach(_SUB ${MSYS2_SEARCH_SUBSYSTEMS})
+        list(APPEND _VULKAN_TOOL_PATHS "${MSYS2_ROOT_DIR}/${_SUB}/bin")
+    endforeach()
+    list(APPEND _VULKAN_TOOL_PATHS "${MSYS2_ROOT_DIR}/usr/bin")
+endif()
+# 兼容非 MSYS2 的 MinGW 发行版（TDM-GCC / 独立 mingw64 等）
+list(APPEND _VULKAN_TOOL_PATHS
+    "$ENV{MINGW_PREFIX}/bin"
+    "$ENV{MSYSTEM_PREFIX}/bin"
+    "C:/mingw64/bin" "C:/MinGW/bin" "C:/TDM-GCC-64/bin")
+
 find_program(GENDEF_EXE
     NAMES gendef
-    PATHS
-        "$ENV{MINGW_PREFIX}/bin"
-        "$ENV{MSYSTEM_PREFIX}/bin"
-        "C:/msys64/ucrt64/bin"
-        "C:/msys64/mingw64/bin"
-        "C:/msys64/clang64/bin"
-        "C:/mingw64/bin"
-        "C:/MinGW/bin"
-        "C:/TDM-GCC-64/bin"
+    PATHS ${_VULKAN_TOOL_PATHS}
     DOC "gendef - MinGW symbol export tool"
+    NO_DEFAULT_PATH
 )
-
 find_program(DLLTOOL_EXE
     NAMES dlltool
-    PATHS
-        "$ENV{MINGW_PREFIX}/bin"
-        "$ENV{MSYSTEM_PREFIX}/bin"
-        "C:/msys64/ucrt64/bin"
-        "C:/msys64/mingw64/bin"
-        "C:/msys64/clang64/bin"
-        "C:/mingw64/bin"
-        "C:/MinGW/bin"
-        "C:/TDM-GCC-64/bin"
+    PATHS ${_VULKAN_TOOL_PATHS}
     DOC "dlltool - MinGW import library generator"
+    NO_DEFAULT_PATH
 )
 
 # ---- 工具未找到的情况 ----
@@ -103,7 +105,7 @@ if(NOT GENDEF_EXE OR NOT DLLTOOL_EXE)
                     "缺少:${MISSING_TOOLS}\n"
                     "请通过以下方式之一获取：\n"
                     "  1. MSYS2: pacman -S mingw-w64-ucrt-x86_64-binutils\n"
-                    "  2. 手动运行: scripts\\generate_vulkan_mingw_lib.bat\n"
+                    "  2. 运行 scripts\\setup_env.ps1 完成环境部署\n"
                     "  3. vcpkg: vcpkg install vulkan --triplet=x64-mingw-static")
     return()
 endif()

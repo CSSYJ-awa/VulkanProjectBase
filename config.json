@@ -1,0 +1,6 @@
+{
+    "exe_name": "VulkanApp",
+    "window_title": "VulkanApp (MinGW + GLFW + GLM)",
+    "window_width": 800,
+    "window_height": 600
+}

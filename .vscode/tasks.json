@@ -1,0 +1,104 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // ==============================================================
+            // 环境检测任务 —— 在构建前手动运行以诊断开发环境
+            // 命令面板 → "Tasks: Run Task" → "Check Environment"
+            // 或在终端中直接: .\scripts\check_env.bat
+            // ==============================================================
+            "label": "Check Environment",
+            "type": "shell",
+            "command": "${workspaceFolder}\\scripts\\check_env.bat",
+            "args": [
+                "--no-pause"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            // ==============================================================
+            // 备用构建任务 —— 适用于未安装 CMake Tools 扩展的用户
+            // 使用 Ctrl+Shift+B 或在命令面板中选择 "Tasks: Run Build Task"
+            // ==============================================================
+            "label": "CMake: build (shell fallback)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build",
+                "--config",
+                "Debug",
+                "-j",
+                "8"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            // ==============================================================
+            // 初次配置任务 —— 运行 cmake 配置（相当于 cmake configure）
+            // ==============================================================
+            "label": "CMake: configure (shell fallback)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S",
+                "${workspaceFolder}",
+                "-B",
+                "${workspaceFolder}/build",
+                "-G",
+                "MinGW Makefiles",
+                "-DCMAKE_C_COMPILER=gcc.exe",
+                "-DCMAKE_CXX_COMPILER=g++.exe",
+                "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            // ==============================================================
+            // 清理构建目录
+            // ==============================================================
+            "label": "CMake: clean build directory",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "-rf",
+                "${workspaceFolder}/build"
+            ],
+            "windows": {
+                "command": "cmd",
+                "args": [
+                    "/c",
+                    "if exist \"${workspaceFolder}\\build\" rmdir /s /q \"${workspaceFolder}\\build\""
+                ]
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}

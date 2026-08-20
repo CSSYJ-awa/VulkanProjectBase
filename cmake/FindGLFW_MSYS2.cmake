@@ -6,178 +6,129 @@
 # 背景：
 #   MSYS2 将 GLFW 安装在 /mingw64/（或 /ucrt64/、/clang64/）下，
 #   但从 Windows 原生命令行启动的 CMake 不会搜索这些 Unix 风格路径。
-#   本模块自动推断 MSYS2 根目录，并设置 cmake 变量使后续构建正常进行。
+#   本模块复用 FindMSYS2.cmake 推断根目录，并用 find_library / find_path 完成
+#   头文件与库的定位，创建 IMPORTED 目标 glfw 供 target_link_libraries 使用。
 #
-# 调用方式：在 find_package(glfw3 QUIET) 失败后 include：
+# 调用方式：
 #   if(NOT glfw3_FOUND)
 #       include(cmake/FindGLFW_MSYS2.cmake)
 #   endif()
 #
-# 输出变量（与 find_package(glfw3) 保持兼容）：
+# 输出变量（与 find_package(glfw3) 兼容）：
 #   GLFW_FOUND          - TRUE 或 FALSE
 #   GLFW_INCLUDE_DIRS   - 头文件路径
 #   GLFW_LIBRARIES      - 库文件完整路径
 #   GLFW_LIBRARY        - 同 GLFW_LIBRARIES（兼容旧变量名）
+#   GLFW_RUNTIME_DLL    - 动态链接时对应的 glfw3.dll 路径（静态链接时为空）
+#
+# 复用宏（供主 CMakeLists.txt 第 3 层回退调用，避免重复实现）：
+#   glfw_make_imported_target()      - 创建 glfw IMPORTED 目标
+#   glfw_locate_runtime_dll(_LIB)   - 从 .dll.a 反推 glfw3.dll 路径
 # ==============================================================================
 
-# ---- 仅在 MinGW 环境下激活 ----
+# ---- 共享宏：必须定义在所有 return 之前，确保主 CMakeLists.txt 第 3 层
+#      回退调用时宏已就绪（即使本模块因非 MinGW / MSYS2 未找到而提前 return） ----
+
+# 从 .dll.a 库路径反推对应的 glfw3.dll（用于 post-build 复制）
+macro(glfw_locate_runtime_dll _LIB_VAR)
+    set(GLFW_RUNTIME_DLL "")
+    if(${_LIB_VAR} MATCHES "\\.dll\\.a$")
+        get_filename_component(_LIB_DIR    "${${_LIB_VAR}}" DIRECTORY)
+        get_filename_component(_LIB_PARENT "${_LIB_DIR}"    DIRECTORY)
+        set(_DLL_CAND "${_LIB_PARENT}/bin/glfw3.dll")
+        if(EXISTS "${_DLL_CAND}")
+            set(GLFW_RUNTIME_DLL "${_DLL_CAND}" CACHE FILEPATH "GLFW 运行时 DLL")
+            message(STATUS "[GLFW] 运行时 DLL: ${_DLL_CAND}")
+        endif()
+    endif()
+endmacro()
+
+# 创建 IMPORTED 目标 glfw（已存在则跳过）
+macro(glfw_make_imported_target)
+    if(GLFW_LIBRARY AND GLFW_INCLUDE_DIRS AND NOT TARGET glfw)
+        add_library(glfw UNKNOWN IMPORTED)
+        set_target_properties(glfw PROPERTIES
+            IMPORTED_LOCATION "${GLFW_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${GLFW_INCLUDE_DIRS}"
+        )
+    endif()
+endmacro()
+
+# ---- include guard：避免 CheckEnvironment 与主流程重复 include 导致日志重复 ----
+#      宏定义在此 guard 之前，确保无论是否已加载，宏都对主流程可用。
+if(_GLFW_MSYS2_LOADED)
+    return()
+endif()
+set(_GLFW_MSYS2_LOADED TRUE)
+
+# ---- 仅 MinGW 环境 ----
 if(NOT MINGW)
     message(STATUS "[GLFW MSYS2] 非 MinGW 编译器，跳过 MSYS2 检测。")
     return()
 endif()
 
-# ============================================================================
-# 阶段 1：推断 MSYS2 根目录
-# ============================================================================
-
-set(MSYS2_ROOT_DIR "")
-
-# ---- 1.1 从环境变量 MSYS2_ROOT 读取（用户可手动设置）----
-if(DEFINED ENV{MSYS2_ROOT})
-    file(TO_CMAKE_PATH "$ENV{MSYS2_ROOT}" MSYS2_ROOT_DIR)
-    message(STATUS "[GLFW MSYS2] 从 MSYS2_ROOT 环境变量获取: ${MSYS2_ROOT_DIR}")
-endif()
-
-# ---- 1.2 从编译器路径反推 ----
-# 例如 g++ 位于 C:/msys64/ucrt64/bin/g++.exe → MSYS2 根目录 = C:/msys64
-if(NOT MSYS2_ROOT_DIR)
-    get_filename_component(COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    # 编译器通常在 {root}/{subsystem}/bin/ 下，回退两级
-    get_filename_component(SUBSYSTEM_DIR "${COMPILER_DIR}" DIRECTORY)
-    get_filename_component(MAYBE_ROOT  "${SUBSYSTEM_DIR}"  DIRECTORY)
-
-    # 验证该目录下是否有 mingw64 或 ucrt64 等子目录（典型的 MSYS2 结构）
-    set(MSYS2_SIGNATURE_DIRS "mingw64;ucrt64;clang64;mingw32;clang32")
-    set(FOUND_SIGNATURE FALSE)
-    foreach(_SUB ${MSYS2_SIGNATURE_DIRS})
-        if(IS_DIRECTORY "${MAYBE_ROOT}/${_SUB}")
-            set(FOUND_SIGNATURE TRUE)
-            break()
-        endif()
-    endforeach()
-
-    if(FOUND_SIGNATURE)
-        set(MSYS2_ROOT_DIR "${MAYBE_ROOT}")
-        message(STATUS "[GLFW MSYS2] 从编译器路径反推: ${MSYS2_ROOT_DIR}")
-    endif()
-endif()
-
-# ---- 1.3 尝试常见的 MSYS2 安装路径 ----
-if(NOT MSYS2_ROOT_DIR)
-    set(MSYS2_CANDIDATE_PATHS
-        "C:/msys64"
-        "C:/msys2"
-        "D:/msys64"
-        "D:/msys2"
-        "E:/msys64"
-        "E:/msys2"
-    )
-    foreach(_CANDIDATE ${MSYS2_CANDIDATE_PATHS})
-        if(IS_DIRECTORY "${_CANDIDATE}")
-            set(MSYS2_ROOT_DIR "${_CANDIDATE}")
-            message(STATUS "[GLFW MSYS2] 从常见路径找到: ${MSYS2_ROOT_DIR}")
-            break()
-        endif()
-    endforeach()
-endif()
-
-# ---- 未找到 MSYS2 根目录 ----
-if(NOT MSYS2_ROOT_DIR)
-    message(STATUS "[GLFW MSYS2] 无法定位 MSYS2 安装目录，跳过。")
-    message(STATUS "             提示: 设置环境变量 MSYS2_ROOT 指向 MSYS2 根目录")
-    message(STATUS "             示例: set MSYS2_ROOT=C:\\msys64")
+# ---- 复用共享 MSYS2 探测模块 ----
+include(cmake/FindMSYS2.cmake)
+if(NOT MSYS2_FOUND)
     return()
 endif()
 
 # ============================================================================
-# 阶段 2：在 MSYS2 目录下搜索 GLFW
+# 在 MSYS2 各子系统下搜索 GLFW
 # ============================================================================
 
-# MSYS2 中 GLFW 可能安装在 mingw64、ucrt64 或 clang64 子系统下
-# 优先搜索编译器自身所在的子系统，再搜索其他子系统
-get_filename_component(COMPILER_SUBSYSTEM "${SUBSYSTEM_DIR}" NAME)
-
-set(MINGW_SEARCH_SUBSYSTEMS "${COMPILER_SUBSYSTEM}" "mingw64" "ucrt64" "clang64" "mingw32" "clang32")
-list(REMOVE_DUPLICATES MINGW_SEARCH_SUBSYSTEMS)
-
-set(GLFW_FOUND_MSYS2 FALSE)
-
-foreach(_SUB ${MINGW_SEARCH_SUBSYSTEMS})
-    set(_INC_DIR "${MSYS2_ROOT_DIR}/${_SUB}/include")
-    set(_LIB_DIR "${MSYS2_ROOT_DIR}/${_SUB}/lib")
-
-    # ---- 检查头文件 ----
-    if(EXISTS "${_INC_DIR}/GLFW/glfw3.h")
-        set(GLFW_INCLUDE_DIRS "${_INC_DIR}")
-
-        # ---- 检查库文件（优先静态库 .a，其次动态导入库 .dll.a）----
-        set(GLFW_LIB_FOUND_LOCAL FALSE)
-
-        # 静态库
-        set(_STATIC_LIB "${_LIB_DIR}/libglfw3.a")
-        if(EXISTS "${_STATIC_LIB}")
-            set(GLFW_LIBRARIES "${_STATIC_LIB}")
-            set(GLFW_LIBRARY   "${_STATIC_LIB}")
-            set(GLFW_LIB_FOUND_LOCAL TRUE)
-            message(STATUS "[GLFW MSYS2] 找到静态库: ${_STATIC_LIB}")
-        endif()
-
-        # 动态导入库
-        if(NOT GLFW_LIB_FOUND_LOCAL)
-            set(_DLL_A "${_LIB_DIR}/libglfw3.dll.a")
-            if(EXISTS "${_DLL_A}")
-                set(GLFW_LIBRARIES "${_DLL_A}")
-                set(GLFW_LIBRARY   "${_DLL_A}")
-                set(GLFW_LIB_FOUND_LOCAL TRUE)
-                message(STATUS "[GLFW MSYS2] 找到动态导入库: ${_DLL_A}")
-            endif()
-        endif()
-
-        # 也尝试不带 lib 前缀的命名
-        if(NOT GLFW_LIB_FOUND_LOCAL)
-            set(_ALT_LIB "${_LIB_DIR}/glfw3.dll.a")
-            if(EXISTS "${_ALT_LIB}")
-                set(GLFW_LIBRARIES "${_ALT_LIB}")
-                set(GLFW_LIBRARY   "${_ALT_LIB}")
-                set(GLFW_LIB_FOUND_LOCAL TRUE)
-                message(STATUS "[GLFW MSYS2] 找到替代命名库: ${_ALT_LIB}")
-            endif()
-        endif()
-
-        if(GLFW_LIBRARY AND GLFW_INCLUDE_DIRS)
-            set(GLFW_FOUND_MSYS2 TRUE)
-            set(GLFW_FOUND TRUE)  # 设置全局变量，与 find_package 兼容
-
-            # 创建 IMPORTED 目标使 target_link_libraries(... glfw) 正常工作
-            if(NOT TARGET glfw)
-                add_library(glfw UNKNOWN IMPORTED)
-                set_target_properties(glfw PROPERTIES
-                    IMPORTED_LOCATION "${GLFW_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${GLFW_INCLUDE_DIRS}"
-                )
-            endif()
-
-            message(STATUS "[GLFW MSYS2] 找到 MSYS2 安装: ${_SUB} [OK]")
-            message(STATUS "             头文件: ${GLFW_INCLUDE_DIRS}")
-            message(STATUS "             库文件: ${GLFW_LIBRARIES}")
-            break()
-        endif()
-    endif()
+# 按子系统优先级构造 lib / include 路径列表
+set(_GLFW_LIB_PATHS "")
+set(_GLFW_INC_PATHS "")
+foreach(_SUB ${MSYS2_SEARCH_SUBSYSTEMS})
+    list(APPEND _GLFW_LIB_PATHS "${MSYS2_ROOT_DIR}/${_SUB}/lib")
+    list(APPEND _GLFW_INC_PATHS "${MSYS2_ROOT_DIR}/${_SUB}/include")
 endforeach()
 
-# ============================================================================
-# 阶段 3：未找到时的诊断信息
-# ============================================================================
+# ---- 搜索库（优先静态库 .a，其次动态导入库 .dll.a）----
+# 静态库优先：避免运行时对 glfw3.dll 的依赖，便于分发。
+# MinGW 下 CMAKE_FIND_LIBRARY_SUFFIXES 默认为 ".dll.a;.a"，此处临时调换顺序。
+set(_GLFW_OLD_SUFFIXES "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".dll.a" ".lib")
+find_library(GLFW_LIBRARY
+    NAMES glfw3 glfw3dll glfw
+    PATHS ${_GLFW_LIB_PATHS}
+    DOC "GLFW 静态/导入库路径 (MSYS2)"
+    NO_DEFAULT_PATH
+)
+set(CMAKE_FIND_LIBRARY_SUFFIXES "${_GLFW_OLD_SUFFIXES}")
 
-if(NOT GLFW_FOUND_MSYS2)
+# ---- 搜索头文件 ----
+find_path(GLFW_INCLUDE_DIRS
+    NAMES GLFW/glfw3.h
+    PATHS ${_GLFW_INC_PATHS}
+    DOC "GLFW 头文件路径 (MSYS2)"
+    NO_DEFAULT_PATH
+)
+
+if(GLFW_LIBRARY AND GLFW_INCLUDE_DIRS)
+    set(GLFW_LIBRARIES "${GLFW_LIBRARY}")
+    set(GLFW_FOUND TRUE)
+
+    glfw_make_imported_target()
+    glfw_locate_runtime_dll(GLFW_LIBRARY)
+
+    # 识别库类型用于日志（先判 .dll.a，否则纯 .a 会被 .a$ 误匹配为"静态"）
+    if(GLFW_LIBRARY MATCHES "\\.dll\\.a$")
+        set(_LIB_TYPE "动态导入库")
+    elseif(GLFW_LIBRARY MATCHES "\\.a$")
+        set(_LIB_TYPE "静态库")
+    else()
+        set(_LIB_TYPE "库")
+    endif()
+
+    message(STATUS "[GLFW MSYS2] 找到 ${_LIB_TYPE}: ${GLFW_LIBRARY}")
+    message(STATUS "[GLFW MSYS2] 头文件: ${GLFW_INCLUDE_DIRS}")
+else()
     message(WARNING "[GLFW MSYS2] 在 ${MSYS2_ROOT_DIR} 下未找到 GLFW。\n"
-                    "  请确认已通过 MSYS2 安装 GLFW：\n"
-                    "    根据你的 MinGW 子系统，运行以下命令之一：\n"
-                    "    · pacman -S mingw-w64-x86_64-glfw       # mingw64 子系统\n"
-                    "    · pacman -S mingw-w64-ucrt-x86_64-glfw  # ucrt64 子系统\n"
-                    "    · pacman -S mingw-w64-clang-x86_64-glfw # clang64 子系统\n"
-                    "  或设置 MSYS2_ROOT 环境变量指向 MSYS2 根目录：\n"
-                    "    set MSYS2_ROOT=C:\\msys64\n"
-                    "  或运行诊断脚本:\n"
-                    "    scripts\\fix_msys2_glfw.bat")
+                    "  请通过 MSYS2 安装 GLFW（按你的 MinGW 子系统选择）：\n"
+                    "    · pacman -S mingw-w64-ucrt-x86_64-glfw       # ucrt64\n"
+                    "    · pacman -S mingw-w64-x86_64-glfw            # mingw64\n"
+                    "    · pacman -S mingw-w64-clang-x86_64-glfw       # clang64\n"
+                    "  或运行 scripts\\setup_env.ps1 自动部署环境。")
 endif()

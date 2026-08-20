@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "name": "MinGW-w64 (Vulkan)",
+            "intelliSenseMode": "windows-gcc-x64",
+
+            // --- 编译器路径 ---
+            // 如果 g++.exe 在系统 PATH 中，直接用 "g++.exe" 即可；
+            // 否则替换为你的 MinGW 安装路径，例如：
+            //   "C:/mingw64/bin/g++.exe"
+            "compilerPath": "g++.exe",
+
+            // --- C/C++ 标准 ---
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+
+            // ------------------------------------------------------------------
+            // 包含路径
+            // 优先使用 CMake 生成的 compile_commands.json（消除所有手写路径警告），
+            // 同时保留 VULKAN_SDK 作为备选，移除 GLM_DIR/GLFW_DIR 避免警告。
+            // ------------------------------------------------------------------
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:VULKAN_SDK}/Include"            // Vulkan 头文件
+            ],
+
+            // 编译定义（与 CMakeLists.txt 保持一致）
+            "defines": [
+                "VK_USE_PLATFORM_WIN32_KHR",
+                "GLFW_INCLUDE_NONE"
+            ],
+
+            // --- 如果 CMake 已生成 compile_commands.json，"browse" 不再需要 ---
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${env:VULKAN_SDK}/Include"
+                ]
+            }
+        }
+    ],
+    "version": 4
+}

@@ -6,6 +6,48 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <regex>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+// ============================================================================
+// 辅助：定位 config.json 路径
+// 优先级：
+//   1. 当前工作目录下的 config.json（开发模式，cwd 通常是项目根目录，
+//      能立即反映用户对 config.json 的修改，无需重新构建）
+//   2. exe 同目录的 config.json（部署模式，最终用户机器上无源码时使用）
+// ============================================================================
+static std::string getConfigPath()
+{
+    // 优先尝试 cwd 下的 config.json
+    {
+        std::ifstream test("config.json");
+        if (test.is_open())
+        {
+            test.close();
+            return "config.json";
+        }
+    }
+#ifdef _WIN32
+    // 回退到 exe 同目录
+    char exePath[MAX_PATH] = {0};
+    if (GetModuleFileNameA(nullptr, exePath, MAX_PATH) > 0)
+    {
+        std::string p(exePath);
+        size_t pos = p.find_last_of("\\/");
+        if (pos != std::string::npos)
+        {
+            return p.substr(0, pos) + "\\config.json";
+        }
+    }
+#endif
+    // 最终回退（即使不存在，loadConfig 会处理失败情况）
+    return "config.json";
+}
 
 // ============================================================================
 // 构造 / 析构
@@ -13,6 +55,7 @@
 
 VulkanApp::VulkanApp()
 {
+    loadConfig();
     createWindow();
     createVulkanInstance();
     std::cout << "[VulkanApp] 初始化完成。" << std::endl;
@@ -37,6 +80,63 @@ VulkanApp::~VulkanApp()
 
     glfwTerminate();
     std::cout << "[GLFW] 已终止。" << std::endl;
+}
+
+// ============================================================================
+// 配置加载（运行时从 config.json 读取，覆盖默认值）
+// ============================================================================
+
+void VulkanApp::loadConfig()
+{
+    std::string path = getConfigPath();
+    std::ifstream f(path);
+    if (!f.is_open())
+    {
+        std::cout << "[Config] 未找到 config.json，使用默认配置。" << std::endl;
+        return;
+    }
+
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string content = ss.str();
+
+    std::smatch m;
+
+    // window_title (UTF-8 字符串，GLFW 3.4+ 原生支持)
+    if (std::regex_search(content, m,
+            std::regex("\"window_title\"\\s*:\\s*\"([^\"]*)\"")))
+    {
+        m_config.windowTitle = m[1].str();
+    }
+
+    // window_width (正整数)
+    if (std::regex_search(content, m,
+            std::regex("\"window_width\"\\s*:\\s*(\\d+)")))
+    {
+        try
+        {
+            unsigned long v = std::stoul(m[1].str());
+            if (v > 0) m_config.windowWidth = static_cast<uint32_t>(v);
+        }
+        catch (...) { /* 解析失败保持默认值 */ }
+    }
+
+    // window_height (正整数)
+    if (std::regex_search(content, m,
+            std::regex("\"window_height\"\\s*:\\s*(\\d+)")))
+    {
+        try
+        {
+            unsigned long v = std::stoul(m[1].str());
+            if (v > 0) m_config.windowHeight = static_cast<uint32_t>(v);
+        }
+        catch (...) { /* 解析失败保持默认值 */ }
+    }
+
+    std::cout << "[Config] 已加载: " << path << std::endl;
+    std::cout << "         标题: " << m_config.windowTitle << std::endl;
+    std::cout << "         尺寸: " << m_config.windowWidth
+              << "x" << m_config.windowHeight << std::endl;
 }
 
 // ============================================================================
@@ -75,7 +175,10 @@ void VulkanApp::createWindow()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     m_window = glfwCreateWindow(
-        WINDOW_WIDTH, WINDOW_HEIGHT, APP_NAME, nullptr, nullptr);
+        m_config.windowWidth,
+        m_config.windowHeight,
+        m_config.windowTitle.c_str(),
+        nullptr, nullptr);
 
     if (!m_window)
     {
@@ -83,7 +186,9 @@ void VulkanApp::createWindow()
         throw std::runtime_error("GLFW 窗口创建失败");
     }
 
-    std::cout << "[GLFW] 窗口创建成功 (" << WINDOW_WIDTH << "x" << WINDOW_HEIGHT << ")。" << std::endl;
+    std::cout << "[GLFW] 窗口创建成功 ("
+              << m_config.windowWidth << "x"
+              << m_config.windowHeight << ")。" << std::endl;
 }
 
 // ============================================================================
@@ -95,7 +200,7 @@ void VulkanApp::createVulkanInstance()
     // --- 应用程序信息 ---
     VkApplicationInfo appInfo{};
     appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName   = APP_NAME;
+    appInfo.pApplicationName   = m_config.windowTitle.c_str();
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName        = "No Engine";
     appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);

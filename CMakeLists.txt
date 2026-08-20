@@ -36,6 +36,8 @@ message(STATUS "Vulkan Library: ${Vulkan_LIBRARY}")
 #   1. 标准 find_package(glfw3)  —— CMake 注册的配置文件
 #   2. FindGLFW_MSYS2.cmake       —— 自动探测 MSYS2 安装的 GLFW
 #   3. find_library + find_path    —— 手动指定路径（GLFW_DIR 环境变量 / 项目 lib/）
+# IMPORTED 目标 glfw 的创建与 glfw3.dll 定位由共享宏完成（glfw_make_imported_target /
+# glfw_locate_runtime_dll），避免与 FindGLFW_MSYS2 重复实现。
 find_package(glfw3 QUIET)
 if(glfw3_FOUND)
     message(STATUS "[GLFW] find_package(glfw3) 成功")
@@ -52,6 +54,9 @@ endif()
 if(NOT GLFW_FOUND)
     message(STATUS "[GLFW] MSYS2 探测未找到，使用 find_library 回退...")
 
+    # 同样优先静态库 .a，避免运行时依赖 glfw3.dll
+    set(_GLFW_OLD_SUFFIXES "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".dll.a" ".lib")
     find_library(GLFW_LIBRARY
         NAMES glfw3 glfw3dll glfw
         PATHS
@@ -60,6 +65,7 @@ if(NOT GLFW_FOUND)
             "${CMAKE_SOURCE_DIR}/lib"
         DOC "GLFW 静态/导入库路径"
     )
+    set(CMAKE_FIND_LIBRARY_SUFFIXES "${_GLFW_OLD_SUFFIXES}")
 
     find_path(GLFW_INCLUDE_DIRS
         NAMES GLFW/glfw3.h
@@ -75,20 +81,16 @@ if(NOT GLFW_FOUND)
         set(GLFW_LIBRARIES "${GLFW_LIBRARY}")
         set(GLFW_FOUND TRUE)
 
-        if(NOT TARGET glfw)
-            add_library(glfw UNKNOWN IMPORTED)
-            set_target_properties(glfw PROPERTIES
-                IMPORTED_LOCATION "${GLFW_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${GLFW_INCLUDE_DIRS}"
-            )
-        endif()
+        # 复用 FindGLFW_MSYS2 的共享宏：创建 IMPORTED 目标 + 定位运行时 DLL
+        glfw_make_imported_target()
+        glfw_locate_runtime_dll(GLFW_LIBRARY)
     else()
         message(FATAL_ERROR
             "GLFW 未找到。请通过以下方式之一安装 GLFW：\n"
             "  [推荐 MSYS2] pacman -S mingw-w64-ucrt-x86_64-glfw\n"
             "  [手动下载]  https://www.glfw.org/download.html\n"
             "  [环境变量]  设置 GLFW_DIR 指向 GLFW 安装目录\n"
-            "  [诊断脚本]  运行 scripts\\fix_msys2_glfw.bat")
+            "  [一键部署]  运行 scripts\\setup_env.ps1")
     endif()
 endif()
 
@@ -124,11 +126,31 @@ if(NOT GLM_FOUND)
             "GLM 未找到。GLM 是纯头文件库，可通过以下方式安装：\n"
             "  [推荐 MSYS2] pacman -S mingw-w64-ucrt-x86_64-glm\n"
             "  [手动下载]   https://github.com/g-truc/glm/releases\n"
-            "  [环境变量]   设置 GLM_INCLUDE_DIR 指向包含 glm/glm.hpp 的目录")
+            "  [环境变量]   设置 GLM_INCLUDE_DIR 指向包含 glm/glm.hpp 的目录\n"
+            "  [一键部署]   运行 scripts\\setup_env.ps1")
     endif()
 else()
     message(STATUS "[GLM] 包含路径: ${GLM_INCLUDE_DIRS}")
 endif()
+
+# ============================================================================
+# 读取 config.json —— 用于配置 exe 输出名（窗口标题/大小由源代码运行时读取）
+# ==============================================================================
+set(CONFIG_FILE "${CMAKE_SOURCE_DIR}/config.json")
+if(NOT EXISTS "${CONFIG_FILE}")
+    message(FATAL_ERROR "config.json 未找到: ${CONFIG_FILE}")
+endif()
+# config.json 变更时自动重新配置
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CONFIG_FILE}")
+
+file(READ "${CONFIG_FILE}" _CONFIG_JSON)
+# 用正则提取 exe_name（兼容 CMake 3.15，不依赖 string(JSON) 需要 3.19+）
+if(_CONFIG_JSON MATCHES "\"exe_name\"[ \t]*:[ \t]*\"([^\"]*)\"")
+    set(APP_EXE_NAME "${CMAKE_MATCH_1}")
+else()
+    set(APP_EXE_NAME "${PROJECT_NAME}")
+endif()
+message(STATUS "[Config] exe_name = ${APP_EXE_NAME}")
 
 # ============================================================================
 # 可执行文件
@@ -136,14 +158,34 @@ endif()
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# 可执行文件输出到 bin/
+# 可执行文件输出到 bin/，文件名取自 config.json 的 exe_name
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+    OUTPUT_NAME "${APP_EXE_NAME}"
+)
+
+# ---- post-build: 复制 config.json 到 exe 输出目录，供运行时读取 ----
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CONFIG_FILE}"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
+    COMMENT "[Config] 复制 config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
 )
 
 # ---- 若 MinGW 导入库自动生成目标存在，将其设为编译前置依赖 ----
 if(TARGET generate_vulkan_mingw_lib)
     add_dependencies(${PROJECT_NAME} generate_vulkan_mingw_lib)
+endif()
+
+# ---- 若 GLFW 为动态链接，post-build 复制 glfw3.dll 到输出目录 ----
+# 静态链接时此变量为空，跳过；动态链接时确保运行时能找到 DLL。
+if(GLFW_RUNTIME_DLL)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${GLFW_RUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/glfw3.dll"
+        COMMENT "[GLFW] 复制运行时 DLL → $<TARGET_FILE_DIR:${PROJECT_NAME}>/glfw3.dll"
+    )
 endif()
 
 # ============================================================================

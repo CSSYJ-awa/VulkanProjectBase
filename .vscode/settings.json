@@ -1,0 +1,48 @@
+{
+    // ================================================================
+    // CMake Tools 扩展配置
+    // 使用 MinGW Makefiles 生成器 + MinGW-w64 编译器
+    // ================================================================
+
+    // --- 生成器 ---
+    "cmake.generator": "MinGW Makefiles",
+
+    // --- 构建目录 ---
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+
+    // --- 编译器路径（系统 PATH 中需能找到 gcc/g++）---
+    // 如果你的 MinGW 不在 PATH 中，请将下面的路径改为绝对路径，例如：
+    //   "C:/mingw64/bin/gcc.exe"
+    //   "C:/mingw64/bin/g++.exe"
+    // TDM-GCC 用户示例：
+    //   "C:/TDM-GCC-64/bin/gcc.exe"
+    //   "C:/TDM-GCC-64/bin/g++.exe"
+    "cmake.cmakePath": "cmake",
+    "cmake.configureSettings": {
+        "CMAKE_C_COMPILER": "gcc.exe",
+        "CMAKE_CXX_COMPILER": "g++.exe"
+    },
+
+    // --- 自动配置 ---
+    "cmake.configureOnOpen": true,
+
+    // --- 并行编译 ---
+    "cmake.buildArgs": [
+        "-j",
+        "8"
+    ],
+
+    // --- 配置/构建环境（注入 Vulkan SDK 路径供 CMake find_package 使用）---
+    "cmake.configureEnvironment": {
+        "VULKAN_SDK": "${env:VULKAN_SDK}"
+    },
+
+    // --- 文件关联 ---
+    "files.associations": {
+        "*.h": "cpp",
+        "*.hpp": "cpp",
+        "vector": "cpp",
+        "array": "cpp",
+        "string": "cpp"
+    }
+}
