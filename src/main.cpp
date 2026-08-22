@@ -5,6 +5,7 @@
  * 应用逻辑封装在 vulkan_app.h / vulkan_app.cpp 中。
  */
 #include "vulkan_app.h"
+#include "engine/logger.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -75,20 +76,27 @@ static void setupConsoleEncoding()
 
 int main()
 {
-    // ---- 在所有输出之前设置控制台编码 ----
+    // ---- 0. 设置 exe 名（在第一次日志输出前）----
+    LOG_INIT("GraphicsEngine");
+
+    // ---- 1. 在所有输出之前设置控制台编码 ----
     setupConsoleEncoding();
 
     try
     {
+        LOG_INFO("App", "main", "程序启动");
         VulkanApp app;
         app.run();
     }
     catch (const std::exception& e)
     {
-        std::cerr << "[错误] " << e.what() << std::endl;
+        LOG_ERROR("App", "main", "未捕获异常: %s", e.what());
+        std::cerr << "[错误] " << e.what() << std::endl;      // 控制台兜底
+        LOG_SHUTDOWN();
         return EXIT_FAILURE;
     }
 
-    std::cout << "[VulkanApp] 程序正常退出。" << std::endl;
+    LOG_INFO("App", "main", "程序正常退出");
+    LOG_SHUTDOWN();
     return EXIT_SUCCESS;
 }

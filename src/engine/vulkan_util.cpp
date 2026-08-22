@@ -60,6 +60,72 @@ void destroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory)
 }
 
 // ----------------------------------------------------------------------------
+// 延迟销毁队列（GPU 资源垃圾回收）
+//
+// 双帧并行渲染时，ECS 更新阶段销毁的缓冲可能仍被上一帧 GPU 命令引用。
+// 这里先登记，待 beginFrame() 等待 fence 完成后（或设备空闲时）统一释放。
+// 单线程主循环驱动，无需加锁。
+// ----------------------------------------------------------------------------
+namespace {
+// 环形队列：每个 in-flight 槽位一组待销毁资源。
+// g_frameCount 记录当前逻辑帧索引（updateSystems 阶段 = 当前帧），
+// defer 登记进「当前帧槽位」，flush 释放「上一帧槽位」（其 fence 已被等待）。
+std::vector<DeferredDestroy> g_pending[2];
+uint32_t g_frameCount = 0;
+}
+
+void deferDestroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory,
+                        void* mapped)
+{
+    if (buffer == VK_NULL_HANDLE && memory == VK_NULL_HANDLE) return;
+    g_pending[g_frameCount % 2].push_back({ device, buffer, memory, mapped,
+                                            VK_NULL_HANDLE, VK_NULL_HANDLE });
+}
+
+void deferDestroyDescriptorSet(VkDevice device, VkDescriptorPool pool,
+                               VkDescriptorSet set)
+{
+    if (set == VK_NULL_HANDLE) return;
+    g_pending[g_frameCount % 2].push_back({ device, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                            nullptr, pool, set });
+}
+
+void flushDeferredDestroy(VkDevice /*device*/)
+{
+    // 释放「上一逻辑帧槽位」的资源：
+    // 这些缓冲最迟被上一帧的 GPU 命令引用，而上一帧的 fence 已在
+    // beginFrame() 的 vkWaitForFences 中等待完成，此刻释放是安全的。
+    std::vector<DeferredDestroy>& list = g_pending[(g_frameCount + 1) % 2];
+    for (auto& p : list)
+    {
+        // 释放前先解除持久映射（仅 UBO 等 HOST_VISIBLE 缓冲需要）
+        if (p.mapped && p.memory) vkUnmapMemory(p.device, p.memory);
+        destroyBuffer(p.device, p.buffer, p.memory);
+        // 描述符集（池含 FREE_DESCRIPTOR_SET_BIT，可在设备空闲时回收）
+        if (p.descPool && p.descSet)
+            vkFreeDescriptorSets(p.device, p.descPool, 1, &p.descSet);
+    }
+    list.clear();
+    ++g_frameCount;
+}
+
+void flushAllDeferredDestroy(VkDevice /*device*/)
+{
+    // 设备已空闲（vkDeviceWaitIdle 后），所有登记的资源均可安全释放
+    for (auto& list : g_pending)
+    {
+        for (auto& p : list)
+        {
+            if (p.mapped && p.memory) vkUnmapMemory(p.device, p.memory);
+            destroyBuffer(p.device, p.buffer, p.memory);
+            if (p.descPool && p.descSet)
+                vkFreeDescriptorSets(p.device, p.descPool, 1, &p.descSet);
+        }
+        list.clear();
+    }
+}
+
+// ----------------------------------------------------------------------------
 // 单次命令缓冲辅助
 // ----------------------------------------------------------------------------
 
@@ -103,6 +169,8 @@ void uploadToBuffer(VkDevice device, VkPhysicalDevice pd,
                     const void* data, VkDeviceSize size,
                     VkBuffer dstBuffer)
 {
+    if (size == 0 || !data || dstBuffer == VK_NULL_HANDLE) return;  // 空操作保护
+
     VkBuffer staging;
     VkDeviceMemory stagingMem;
     createBuffer(device, pd, size,
@@ -112,7 +180,13 @@ void uploadToBuffer(VkDevice device, VkPhysicalDevice pd,
                  staging, stagingMem);
 
     void* mapped = nullptr;
-    vkMapMemory(device, stagingMem, 0, size, 0, &mapped);
+    // 修复：必须检查 vkMapMemory 返回值，失败时 mapped 为 nullptr，
+    // 直接 memcpy(nullptr) 会触发访问违例（SEH AV）
+    if (vkMapMemory(device, stagingMem, 0, size, 0, &mapped) != VK_SUCCESS)
+    {
+        destroyBuffer(device, staging, stagingMem);
+        throw std::runtime_error("uploadToBuffer: vkMapMemory 失败");
+    }
     memcpy(mapped, data, static_cast<size_t>(size));
     vkUnmapMemory(device, stagingMem);
 
@@ -168,7 +242,8 @@ void createImage2D(VkDevice device, VkPhysicalDevice pd,
                    uint32_t width, uint32_t height,
                    VkFormat format, VkImageUsageFlags usage,
                    VkMemoryPropertyFlags props,
-                   VkImage& image, VkDeviceMemory& memory)
+                   VkImage& image, VkDeviceMemory& memory,
+                   VkSampleCountFlagBits samples)
 {
     VkImageCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -181,7 +256,7 @@ void createImage2D(VkDevice device, VkPhysicalDevice pd,
     ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     ci.usage = usage;
     ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.samples = samples;
 
     if (vkCreateImage(device, &ci, nullptr, &image) != VK_SUCCESS)
         throw std::runtime_error("vkCreateImage 失败");

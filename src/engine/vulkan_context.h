@@ -10,6 +10,7 @@
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+#include "render/render_device.h"
 
 #include <cstdint>
 #include <vector>
@@ -46,6 +47,14 @@ public:
     VkCommandPool    commandPool()   const { return m_commandPool; }
     VkExtent2D       extent()        const { return m_swapChainExtent; }
     VkFormat         imageFormat()   const { return m_swapChainImageFormat; }
+    VkFormat         depthFormat()   const { return m_depthFormat; }
+    // 便捷组装 RenderDevice（v1.0.1）：渲染模块共享句柄集合
+    RenderDevice     renderDevice()  const
+    { return RenderDevice{ m_device, m_physicalDevice, m_graphicsQueue,
+                           m_commandPool, 0, VK_NULL_HANDLE }; }
+    // 交换链帧缓冲（供渲染链重新 begin 主 pass 时使用）
+    VkFramebuffer    framebuffer(uint32_t imageIndex) const
+    { return imageIndex < m_swapChainFramebuffers.size() ? m_swapChainFramebuffers[imageIndex] : VK_NULL_HANDLE; }
     uint32_t         currentFrame()  const { return m_currentFrame; }
 
 private:
@@ -64,6 +73,11 @@ private:
     void recreateSwapChain();
     void cleanupSwapChain();
 
+    // ---- 深度缓冲（3D 遮挡） ----
+    void     createDepthResources();
+    void     cleanupDepthResources();
+    VkFormat findDepthFormat();
+
     VkSurfaceKHR     m_surface             = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice     = VK_NULL_HANDLE;
     VkDevice         m_device             = VK_NULL_HANDLE;
@@ -80,6 +94,12 @@ private:
     // 渲染通道 + 帧缓冲
     VkRenderPass                m_renderPass       = VK_NULL_HANDLE;
     std::vector<VkFramebuffer>  m_swapChainFramebuffers;
+
+    // 深度缓冲（与交换链同尺寸，重建时一并重建）
+    VkFormat                    m_depthFormat    = VK_FORMAT_UNDEFINED;
+    VkImage                     m_depthImage     = VK_NULL_HANDLE;
+    VkDeviceMemory              m_depthMemory    = VK_NULL_HANDLE;
+    VkImageView                 m_depthImageView = VK_NULL_HANDLE;
 
     // 命令缓冲
     VkCommandPool               m_commandPool      = VK_NULL_HANDLE;

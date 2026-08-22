@@ -134,26 +134,77 @@ else()
 endif()
 
 # ============================================================================
-# 读取 config.json —— 用于配置 exe 输出名（窗口标题/大小由源代码运行时读取）
-# ==============================================================================
-set(CONFIG_FILE "${CMAKE_SOURCE_DIR}/config.json")
-if(NOT EXISTS "${CONFIG_FILE}")
-    message(FATAL_ERROR "config.json 未找到: ${CONFIG_FILE}")
+# EnTT —— ECS 库（header-only，通过 FetchContent 从 GitHub 拉取）
+#
+# 本项目用 EnTT 实现 ECS 架构（src/ecs/）：
+#   - entt::registry 管理实体与组件
+#   - 系统（System）通过 entt::view 遍历具备特定组件集合的实体
+#
+# 若 FetchContent 因网络问题失败，可手动操作：
+#   1. 从 https://github.com/skypjack/entt/releases 下载最新 release
+#   2. 解压到 third_party/entt/（使 third_party/entt/entt/ 单一包含头存在）
+#   3. 设置环境变量 ENTT_DIR 指向解压目录
+# ============================================================================
+include(FetchContent)
+set(ENTT_VERSION "v3.13.2" CACHE STRING "EnTT 版本 tag")
+if(NOT ENTT_FOUND)
+    # 优先使用本地 third_party/entt（手动下载）
+    find_path(ENTT_INCLUDE_DIR_LOCAL
+        NAMES entt/entt.hpp
+        PATHS
+            "${CMAKE_SOURCE_DIR}/third_party/entt"
+            "$ENV{ENTT_DIR}"
+        DOC "EnTT 头文件目录（含 entt/entt.hpp）"
+    )
+    if(ENTT_INCLUDE_DIR_LOCAL)
+        set(ENTT_INCLUDE_DIRS "${ENTT_INCLUDE_DIR_LOCAL}")
+        set(ENTT_FOUND TRUE)
+        message(STATUS "[EnTT] 使用本地: ${ENTT_INCLUDE_DIRS}")
+    else()
+        # FetchContent 回退：自动从 GitHub 拉取
+        message(STATUS "[EnTT] 本地未找到，使用 FetchContent 拉取（首次配置需联网）...")
+        FetchContent_Declare(
+            entt
+            GIT_REPOSITORY https://github.com/skypjack/entt.git
+            GIT_TAG        ${ENTT_VERSION}
+            GIT_SHALLOW    TRUE
+        )
+        # 抑制 EnTT 子项目的 install 步骤
+        set(ENTT_INSTALL OFF CACHE BOOL "" FORCE)
+        FetchContent_GetProperties(entt)
+        if(NOT entt_POPULATED)
+            FetchContent_Populate(entt)
+        endif()
+        # EnTT 是 header-only：只需拿 include 路径
+        set(ENTT_INCLUDE_DIRS "${entt_SOURCE_DIR}/src" CACHE PATH "EnTT include dir")
+        set(ENTT_FOUND TRUE)
+        message(STATUS "[EnTT] FetchContent 完成: ${ENTT_INCLUDE_DIRS}")
+    endif()
 endif()
-# config.json 变更时自动重新配置
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CONFIG_FILE}")
 
-file(READ "${CONFIG_FILE}" _CONFIG_JSON)
+# ============================================================================
+# 读取 build.json —— CMake 构建配置（exe_name / sources / extra_libraries）
+# 运行时窗口配置（window_title/width/height/aspect_mode）在 config.json，
+# 由源代码运行时读取，CMake 阶段只负责复制到 bin/。
+# ==============================================================================
+set(BUILD_CONFIG_FILE "${CMAKE_SOURCE_DIR}/build.json")
+if(NOT EXISTS "${BUILD_CONFIG_FILE}")
+    message(FATAL_ERROR "build.json 未找到: ${BUILD_CONFIG_FILE}")
+endif()
+# build.json 变更时自动重新配置
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BUILD_CONFIG_FILE}")
+
+file(READ "${BUILD_CONFIG_FILE}" _CONFIG_JSON)
 # 用正则提取 exe_name（兼容 CMake 3.15，不依赖 string(JSON) 需要 3.19+）
 if(_CONFIG_JSON MATCHES "\"exe_name\"[ \t]*:[ \t]*\"([^\"]*)\"")
     set(APP_EXE_NAME "${CMAKE_MATCH_1}")
 else()
     set(APP_EXE_NAME "${PROJECT_NAME}")
 endif()
-message(STATUS "[Config] exe_name = ${APP_EXE_NAME}")
+message(STATUS "[Build] exe_name = ${APP_EXE_NAME}")
 
 # ============================================================================
-# 从 config.json 解析 JSON 字符串数组（兼容 CMake 3.15）
+# 从 build.json 解析 JSON 字符串数组（兼容 CMake 3.15）
 # 输入：_CONFIG_JSON, 键名 → 输出变量
 # ============================================================================
 function(_parse_json_string_array result_var json_content key)
@@ -187,18 +238,18 @@ if(CONFIG_SOURCES)
     foreach(_src ${CONFIG_SOURCES})
         list(APPEND APP_SOURCES "${CMAKE_SOURCE_DIR}/${_src}")
     endforeach()
-    message(STATUS "[Config] sources = ${CONFIG_SOURCES}")
+    message(STATUS "[Build] sources = ${CONFIG_SOURCES}")
 else()
     set(APP_SOURCES "")
-    message(STATUS "[Config] sources 为空，回退到 GLOB_RECURSE")
+    message(STATUS "[Build] sources 为空，回退到 GLOB_RECURSE")
 endif()
 
 # ---- 解析 extra_libraries（额外链接库）----
 _parse_json_string_array(CONFIG_EXTRA_LIBS "${_CONFIG_JSON}" "extra_libraries")
 if(CONFIG_EXTRA_LIBS)
-    message(STATUS "[Config] extra_libraries = ${CONFIG_EXTRA_LIBS}")
+    message(STATUS "[Build] extra_libraries = ${CONFIG_EXTRA_LIBS}")
 else()
-    message(STATUS "[Config] extra_libraries = (空)")
+    message(STATUS "[Build] extra_libraries = (空)")
 endif()
 
 # ============================================================================
@@ -234,6 +285,20 @@ set(SHADER_SOURCES
     "${SHADER_SOURCE_DIR}/mesh3d.frag"
     "${SHADER_SOURCE_DIR}/text.vert"
     "${SHADER_SOURCE_DIR}/text.frag"
+    # v1.0.1 渲染引擎扩展模块着色器
+    "${SHADER_SOURCE_DIR}/postfx.vert"
+    "${SHADER_SOURCE_DIR}/postfx.frag"
+    "${SHADER_SOURCE_DIR}/shadow.vert"
+    "${SHADER_SOURCE_DIR}/shadow.frag"
+    "${SHADER_SOURCE_DIR}/skybox.vert"
+    "${SHADER_SOURCE_DIR}/skybox.frag"
+    "${SHADER_SOURCE_DIR}/instanced.vert"
+    "${SHADER_SOURCE_DIR}/instanced.frag"
+    "${SHADER_SOURCE_DIR}/particle.vert"
+    "${SHADER_SOURCE_DIR}/particle.frag"
+    # v1.0.2 调试可视化
+    "${SHADER_SOURCE_DIR}/debug.vert"
+    "${SHADER_SOURCE_DIR}/debug.frag"
 )
 
 set(SHADER_TARGETS "")
@@ -274,7 +339,7 @@ endif()
 # ============================================================================
 # 可执行文件
 # ============================================================================
-# 源文件列表由 config.json 的 sources 数组驱动；为空时回退到 GLOB_RECURSE
+# 源文件列表由 build.json 的 sources 数组驱动；为空时回退到 GLOB_RECURSE
 if(APP_SOURCES)
     set(APP_COMPILE_SOURCES ${APP_SOURCES})
 else()
@@ -287,27 +352,20 @@ if(TARGET compile_shaders)
     add_dependencies(${PROJECT_NAME} compile_shaders)
 endif()
 
-# 可执行文件输出到 bin/，文件名取自 config.json 的 exe_name
+# 可执行文件输出到 bin/，文件名取自 build.json 的 exe_name
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
     OUTPUT_NAME "${APP_EXE_NAME}"
 )
 
-# ---- post-build: 复制 config.json 到 exe 输出目录，供运行时读取 ----
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CONFIG_FILE}"
-        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
-    COMMENT "[Config] 复制 config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
-)
-
-# ---- post-build: 复制 ui_config.json 到 exe 输出目录 ----
-if(EXISTS "${CMAKE_SOURCE_DIR}/ui_config.json")
+# ---- post-build: 复制 config.json（运行时窗口配置）到 exe 输出目录 ----
+set(RUNTIME_CONFIG_FILE "${CMAKE_SOURCE_DIR}/config.json")
+if(EXISTS "${RUNTIME_CONFIG_FILE}")
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/ui_config.json"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/ui_config.json"
-        COMMENT "[UI] 复制 ui_config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/ui_config.json"
+            "${RUNTIME_CONFIG_FILE}"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
+        COMMENT "[Config] 复制 config.json → $<TARGET_FILE_DIR:${PROJECT_NAME}>/config.json"
     )
 endif()
 
@@ -344,6 +402,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${Vulkan_INCLUDE_DIRS}
     ${GLM_INCLUDE_DIRS}
+    ${ENTT_INCLUDE_DIRS}
 )
 
 # ============================================================================

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VulkanProjectBase · API 索引 v1.0.2</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --panel2: #1d2740;
+    --border: #2a3550;
+    --text: #dbe4f5;
+    --muted: #8b98b5;
+    --accent: #4ea1ff;
+    --accent2: #7cd4a0;
+    --yellow: #f2c879;
+    --red: #ff6b6b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.55;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: linear-gradient(135deg, #131a2b, #1a2440);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header h1 small { color: var(--accent2); font-weight: 500; font-size: 13px; margin-left: 8px; }
+  .search-box { flex: 1; min-width: 260px; position: relative; }
+  .search-box input {
+    width: 100%; padding: 10px 16px 10px 38px;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; outline: none; transition: border .2s;
+  }
+  .search-box input:focus { border-color: var(--accent); }
+  .search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); opacity: .5; }
+  .stat { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .layout { display: grid; grid-template-columns: 240px 1fr; gap: 20px; padding: 20px 28px; max-width: 1400px; margin: 0 auto; }
+  nav.cats {
+    position: sticky; top: 84px; align-self: start;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px; max-height: calc(100vh - 110px); overflow-y: auto;
+  }
+  nav.cats h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 10px 6px 6px; }
+  nav.cats h3:first-child { margin-top: 0; }
+  nav.cats button {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; color: var(--text); cursor: pointer;
+    padding: 7px 10px; border-radius: 6px; font-size: 13px; transition: background .15s;
+  }
+  nav.cats button:hover { background: var(--panel2); }
+  nav.cats button.active { background: var(--accent); color: #081018; font-weight: 600; }
+  nav.cats .count { float: right; color: var(--muted); font-size: 11px; }
+  main { min-width: 0; }
+  .doc-links {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .doc-links a {
+    background: var(--panel); border: 1px solid var(--border); color: var(--accent);
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; text-decoration: none; transition: all .15s;
+  }
+  .doc-links a:hover { background: var(--accent); color: #081018; }
+  .group { margin-bottom: 22px; }
+  .group h2 {
+    font-size: 15px; color: var(--accent); margin-bottom: 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; cursor: pointer; text-decoration: none; color: var(--text);
+    display: block; transition: transform .12s, border-color .12s, background .12s;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--accent); background: var(--panel2); }
+  .card .name { font-family: Consolas, "Courier New", monospace; font-size: 14px; font-weight: 700; color: var(--yellow); }
+  .card .file { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; margin-top: 2px; }
+  .card .desc { font-size: 12.5px; color: var(--text); margin-top: 6px; opacity: .9; }
+  .card .tag {
+    display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 10px;
+    background: var(--panel2); color: var(--accent2); border: 1px solid var(--border); margin-top: 6px;
+  }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: 14px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; border-top: 1px solid var(--border); margin-top: 20px; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; padding: 14px; }
+    nav.cats { position: static; max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ VulkanProjectBase<small>API 索引 · v1.0.2</small></h1>
+  <div class="search-box">
+    <span class="icon">🔍</span>
+    <input type="text" id="q" placeholder="搜索类 / 方法 / 模块 / 关键字…" autofocus>
+  </div>
+  <div class="stat" id="stat"></div>
+</header>
+
+<div class="layout">
+  <nav class="cats" id="cats"></nav>
+  <main>
+    <div class="doc-links">
+      <a href="api/00-overview.md">📖 文档总览</a>
+      <a href="api/01-app-core.md">01 应用与核心</a>
+      <a href="api/02-content.md">02 图形内容</a>
+      <a href="api/03-ui.md">03 UI</a>
+      <a href="api/04-ecs.md">04 ECS</a>
+      <a href="api/05-aux.md">05 辅助</a>
+      <a href="api/06-render-engine.md">⭐ 06 渲染引擎</a>
+      <a href="../README.md">🏠 README</a>
+      <a href="../CHANGELOG.md">📜 CHANGELOG</a>
+    </div>
+    <div id="list"></div>
+  </main>
+</div>
+
+<footer>VulkanProjectBase v1.0.2 · 渲染引擎 API 索引 · 本地静态页面，可直接 file:// 打开</footer>
+
+<script>
+// ============ API 索引数据 ============
+// cat: 分类  name: API 名  file: 源文件  desc: 简述  link: 文档锚点  tag: 标签
+const DATA = [
+
+// ── 渲染引擎模块（v1.0.1 / v1.0.2） ─────────────────────
+{ cat:"渲染引擎", name:"RenderDevice", file:"render/render_device.h", desc:"渲染模块共享 Vulkan 句柄集合（device/physicalDevice/queue/commandPool/descriptorPool），VulkanContext::renderDevice() 一键组装", link:"api/06-render-engine.md#61-renderdevice--渲染模块共享句柄", tag:"句柄" },
+{ cat:"渲染引擎", name:"Texture", file:"render/texture.h", desc:"GPU 纹理：create / loadFromFile(TGA·BMP) / 棋盘·渐变·噪声程序化纹理 / transitionTo / createDefaultLayout", link:"api/06-render-engine.md#62-texture--纹理贴图系统", tag:"纹理" },
+{ cat:"渲染引擎", name:"image_util", file:"render/texture.h", desc:"纯 CPU 图像解码：decodeBmp / decodeTga / decodeFile / fillChecker / fillGradient / fillNoise", link:"api/06-render-engine.md#62-texture--纹理贴图系统", tag:"解码" },
+{ cat:"渲染引擎", name:"RenderTarget", file:"render/framebuffer.h", desc:"离屏渲染目标：颜色可采样 + 深度附件；v1.0.2 新增 MSAA（samples 参数 + 自动 resolve）", link:"api/06-render-engine.md#63-rendertarget--离屏渲染目标", tag:"离屏/MSAA" },
+{ cat:"渲染引擎", name:"PostFx", file:"render/postfx.h", desc:"后处理特效链：apply(RT) 输出到当前 pass，单 UBO 控制", link:"api/06-render-engine.md#64-postfx--后处理特效链", tag:"特效" },
+{ cat:"渲染引擎", name:"PostFxEffect", file:"render/postfx.h", desc:"特效枚举：kNone/kGrayscale/kInvert/kBlur/kEdgeDetect/kSharpen/kBloom", link:"api/06-render-engine.md#64-postfx--后处理特效链", tag:"特效" },
+{ cat:"渲染引擎", name:"Skybox", file:"render/skybox.h", desc:"程序化天空 + 环境光：渐变/太阳光斑/环境光颜色与强度；v1.0.2 支持 MSAA samples", link:"api/06-render-engine.md#65-skybox--程序化天空--环境光", tag:"天空" },
+{ cat:"渲染引擎", name:"ShadowMap", file:"render/shadow.h", desc:"方向光阴影贴图：深度 pass + 深度比较采样器 + computeLightVP", link:"api/06-render-engine.md#66-shadowmap--方向光阴影贴图", tag:"阴影" },
+{ cat:"渲染引擎", name:"Instancing", file:"render/instancing.h", desc:"实例化渲染：uploadMesh / setInstances(mat4+颜色) / setLight / draw；v1.0.2 支持 MSAA", link:"api/06-render-engine.md#67-instancing--实例化渲染", tag:"实例化" },
+{ cat:"渲染引擎", name:"ParticleSystem", file:"render/particles.h", desc:"CPU 粒子：spawn / update / draw + 纹理 / 颜色渐变 / 重力；v1.0.2 支持 MSAA", link:"api/06-render-engine.md#68-particlesystem--cpu-粒子系统", tag:"粒子" },
+{ cat:"渲染引擎", name:"obj_loader", file:"render/mesh_loader.h", desc:"OBJ 解析：load / loadFromText（v/vt/vn/f · 负索引 · 四边形 · 自动法线）", link:"api/06-render-engine.md#69-obj_loader--obj-模型加载", tag:"模型" },
+{ cat:"渲染引擎", name:"DebugRenderer", file:"render/debug_render.h", desc:"v1.0.2 调试可视化：line/box/aabb/sphere/circle/grid/axes/normal 批量线段渲染；debugRenderer() 直接访问", link:"api/06-render-engine.md#71-debugrenderer--调试可视化", tag:"调试" },
+{ cat:"渲染引擎", name:"Mesh3D 材质/雾/半球光", file:"geometry3d/mesh3d.h", desc:"v1.0.2：setTexture(三平面映射) / setFog(距离雾) / setHemisphere(半球环境光)；MeshUBO 288 字节", link:"api/06-render-engine.md#72-mesh3d-材质--雾效--半球环境光", tag:"材质" },
+{ cat:"渲染引擎", name:"MSAA 多重采样", file:"render/framebuffer.h", desc:"v1.0.2：config msaa_samples(1/2/4/8) + RenderTarget/全部管线 samples 参数化 + 自动 resolve", link:"api/06-render-engine.md#73-msaa-多重采样", tag:"MSAA" },
+{ cat:"渲染引擎", name:"AppConfig::msaaSamples", file:"vulkan_app.h", desc:"v1.0.2：MSAA 采样级别配置（config.json msaa_samples）", link:"api/06-render-engine.md#73-msaa-多重采样", tag:"MSAA" },
+
+// ── 逻辑系统（v1.0.2） ─────────────────────────────────
+{ cat:"逻辑系统", name:"events::EventBus", file:"engine/event_system.h", desc:"v1.0.2 完整事件系统：订阅优先级 / subscribeOnce / enqueue/dispatch 延迟队列 / 全局单例 events::system()；ecs::EventBus 复用", link:"api/04-ecs.md#45-完整事件系统", tag:"事件" },
+{ cat:"逻辑系统", name:"TimerSystem", file:"engine/timers.h", desc:"v1.0.2 定时器：after 延时 / every 循环 / everyFrame 每帧回调；全局单例 timers::system()", link:"api/04-ecs.md#46-逻辑系统", tag:"定时器" },
+{ cat:"逻辑系统", name:"TweenSystem", file:"engine/tween.h", desc:"v1.0.2 缓动动画：8 种曲线，标量/vec3/颜色补间，非侵入式直接操作变量指针；tween::system()", link:"api/04-ecs.md#46-逻辑系统", tag:"缓动" },
+{ cat:"逻辑系统", name:"TimeState", file:"ecs/time_state.h", desc:"全局时间缩放 timeScale + 固定时间步 consumeFixedSteps（确定性物理）", link:"api/04-ecs.md#46-逻辑系统", tag:"时间" },
+{ cat:"逻辑系统", name:"TriggerZone", file:"ecs/components.h", desc:"v1.0.2 区域触发器：AABB/球；进出发布 TriggerEnterEvent/TriggerExitEvent", link:"api/04-ecs.md#46-逻辑系统", tag:"触发器" },
+
+// ── ECS（v1.0.2 优化） ─────────────────────────────────
+{ cat:"ECS", name:"SceneFactory", file:"ecs/scene_factory.h", desc:"v1.0.2 场景工厂：一键创建相机/灯光/网格/生成器/触发器/碰撞盒，参数高度自定义", link:"api/04-ecs.md#48-scenefactory--场景实体工厂", tag:"工厂" },
+{ cat:"ECS", name:"Coordinator::autoPublishComponentEvents", file:"ecs/coordinator.h", desc:"v1.0.2 组件变更事件：挂载→ComponentAdded<T>，移除→ComponentRemoved<T>", link:"api/04-ecs.md#47-ecs-优化", tag:"事件" },
+{ cat:"ECS", name:"Coordinator::aliveEntities", file:"ecs/coordinator.h", desc:"v1.0.2 实体列表缓存：O(1) 全量遍历存活实体", link:"api/04-ecs.md#47-ecs-优化", tag:"缓存" },
+{ cat:"ECS", name:"RenderSystem3D 批处理", file:"ecs/systems.h", desc:"v1.0.2 按材质纹理分组排序，同纹理连续绘制减少描述符切换", link:"api/04-ecs.md#47-ecs-优化", tag:"批处理" },
+
+// ── 应用与渲染核心 ─────────────────────────────────────
+{ cat:"应用与核心", name:"VulkanApp", file:"vulkan_app.h", desc:"顶层应用：配置/窗口/Vulkan/渲染链/ECS/场景/UI/主循环", link:"api/01-app-core.md#11-vulkanapp--顶层应用", tag:"入口" },
+{ cat:"应用与核心", name:"VulkanApp::createRenderModules", file:"vulkan_app.h", desc:"v1.0.1 渲染链装配：RT/后处理/天空/阴影/实例/粒子（失败回退）", link:"api/01-app-core.md#11-vulkanapp--顶层应用", tag:"渲染链" },
+{ cat:"应用与核心", name:"VulkanApp::renderSceneToRT", file:"vulkan_app.h", desc:"场景 → 离屏 RT：天空盒 → 3D 网格 → 实例化 → 粒子", link:"api/01-app-core.md#11-vulkanapp--顶层应用", tag:"渲染链" },
+{ cat:"应用与核心", name:"AppConfig", file:"vulkan_app.h", desc:"config.json 运行时配置：window_title/width/height/aspect_mode", link:"api/01-app-core.md#11-vulkanapp--顶层应用", tag:"配置" },
+{ cat:"应用与核心", name:"VulkanContext", file:"engine/vulkan_context.h", desc:"Vulkan 后端：设备/交换链/命令缓冲/同步；beginFrame/endFrame", link:"api/01-app-core.md#12-vulkancontext--渲染后端", tag:"后端" },
+{ cat:"应用与核心", name:"VulkanContext::renderDevice", file:"engine/vulkan_context.h", desc:"v1.0.1 新增：一键组装 RenderDevice（渲染模块共享句柄集合）", link:"api/01-app-core.md#12-vulkancontext--渲染后端", tag:"句柄" },
+{ cat:"应用与核心", name:"vulkan_util", file:"engine/vulkan_util.h", desc:"工具：缓冲/图像/着色器创建 + 延迟销毁队列（GPU 安全）", link:"api/01-app-core.md#13-vulkan_util--工具函数", tag:"工具" },
+{ cat:"应用与核心", name:"deferDestroyBuffer", file:"engine/vulkan_util.h", desc:"缓冲延迟销毁（双帧飞行防 use-after-free / DEVICE_LOST）", link:"api/01-app-core.md#13-vulkan_util--工具函数", tag:"工具" },
+{ cat:"应用与核心", name:"Pipeline2D", file:"engine/pipelines.h", desc:"2D 图元管线：TRIANGLE_LIST/FAN/LINE_LIST/LINE_STRIP 四拓扑", link:"api/01-app-core.md#14-图形管线pipeline2d--3d--text", tag:"管线" },
+{ cat:"应用与核心", name:"Pipeline3D", file:"engine/pipelines.h", desc:"3D 网格管线：MVP UBO + 深度测试 + PushConst 颜色", link:"api/01-app-core.md#14-图形管线pipeline2d--3d--text", tag:"管线" },
+{ cat:"应用与核心", name:"PipelineText", file:"engine/pipelines.h", desc:"文字管线（字形图集采样，预留模式）", link:"api/01-app-core.md#14-图形管线pipeline2d--3d--text", tag:"管线" },
+{ cat:"应用与核心", name:"MeshUBO", file:"geometry3d/mesh3d.h", desc:"3D UBO 布局：model/view/proj + lightDir/ambient/lightColor（std140）", link:"api/01-app-core.md#14-图形管线pipeline2d--3d--text", tag:"UBO" },
+
+// ── 图形内容（2D/3D/文字/字体） ─────────────────────────
+{ cat:"图形内容", name:"Shape", file:"shapes/shape.h", desc:"2D 图元基类：upload / drawVBOOnly / 拓扑分组标志", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Line", file:"shapes/shape.h", desc:"线段（LINE_LIST）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Triangle", file:"shapes/shape.h", desc:"三角形（TRIANGLE_LIST）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Rectangle / Square", file:"shapes/shape.h", desc:"矩形 / 正方形（TRIANGLE_LIST）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Circle", file:"shapes/shape.h", desc:"圆（TRIANGLE_FAN，顶点 ↓67%）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Wave", file:"shapes/shape.h", desc:"正弦波形（LINE_STRIP）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Polygon", file:"shapes/shape.h", desc:"凸多边形（TRIANGLE_FAN）", link:"api/02-content.md#21-shape--2d-图元体系", tag:"2D" },
+{ cat:"图形内容", name:"Mesh3D", file:"geometry3d/mesh3d.h", desc:"3D 网格基类：setModel/setLight/upload/drawVBOOnly/drawDepth", link:"api/02-content.md#22-mesh3d--3d-网格体系", tag:"3D" },
+{ cat:"图形内容", name:"Cube", file:"geometry3d/mesh3d.h", desc:"立方体（6 面 × 2 三角）", link:"api/02-content.md#22-mesh3d--3d-网格体系", tag:"3D" },
+{ cat:"图形内容", name:"Polyhedron", file:"geometry3d/mesh3d.h", desc:"多面体：Tetrahedron / Octahedron / Icosahedron", link:"api/02-content.md#22-mesh3d--3d-网格体系", tag:"3D" },
+{ cat:"图形内容", name:"TextRenderer", file:"text/text_renderer.h", desc:"文字渲染：像素/平滑字体、多行、像素/NDC 双模式", link:"api/02-content.md#23-文字渲染textrenderer", tag:"文字" },
+{ cat:"图形内容", name:"Font", file:"text/font.h", desc:"字体抽象基类：getGlyphPixels / glyphWidth / glyphHeight", link:"api/02-content.md#24-字体系统font--pixelfont--smoothfont--fontregistry", tag:"字体" },
+{ cat:"图形内容", name:"PixelFont", file:"text/font.h", desc:"内置 6×8 ASCII 点阵像素字（单例）", link:"api/02-content.md#24-字体系统font--pixelfont--smoothfont--fontregistry", tag:"字体" },
+{ cat:"图形内容", name:"SmoothFont", file:"text/font.h", desc:"GDI TTF 抗锯齿平滑字体（需 gdi32）", link:"api/02-content.md#24-字体系统font--pixelfont--smoothfont--fontregistry", tag:"字体" },
+{ cat:"图形内容", name:"FontRegistry", file:"text/font.h", desc:"字体注册表单例：getOrCreateSmoothFont 缓存 + PixelFont 回退", link:"api/02-content.md#24-字体系统font--pixelfont--smoothfont--fontregistry", tag:"字体" },
+
+// ── UI 系统 ───────────────────────────────────────────
+{ cat:"UI", name:"UiElement", file:"ui/ui_element.h", desc:"UI 元素基类：树结构 / 布局 / 外观 / 脏标记", link:"api/03-ui.md#31-uielement--所有-ui-元素基类", tag:"UI" },
+{ cat:"UI", name:"IClickable", file:"ui/ui_event.h", desc:"点击事件 Mix-in（setClickHandler）", link:"api/03-ui.md#32-接口-mix-in多继承事件能力", tag:"UI" },
+{ cat:"UI", name:"IHoverable", file:"ui/ui_event.h", desc:"悬停事件 Mix-in", link:"api/03-ui.md#32-接口-mix-in多继承事件能力", tag:"UI" },
+{ cat:"UI", name:"ITextInput", file:"ui/ui_event.h", desc:"文本输入 Mix-in（setInputHandler）", link:"api/03-ui.md#32-接口-mix-in多继承事件能力", tag:"UI" },
+{ cat:"UI", name:"IDraggable", file:"ui/ui_event.h", desc:"拖拽 Mix-in（setDragHandler）", link:"api/03-ui.md#32-接口-mix-in多继承事件能力", tag:"UI" },
+{ cat:"UI", name:"UiText", file:"ui/ui_widgets.h", desc:"纯文本标签", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiButton", file:"ui/ui_widgets.h", desc:"按钮：三态变色（normal/hover/pressed）+ 点击", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiTextBox", file:"ui/ui_widgets.h", desc:"文本输入框：全局焦点 / UTF-8 退格 / ESC 失焦", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiPanel", file:"ui/ui_widgets.h", desc:"可拖拽容器（递归嵌套）", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiSlider", file:"ui/ui_widgets.h", desc:"滑块：值域调节 + 实时回调", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiCheckbox", file:"ui/ui_widgets.h", desc:"复选开关", link:"api/03-ui.md#33-6-个内置控件", tag:"UI" },
+{ cat:"UI", name:"UiBuilder", file:"ui/ui_builder.h", desc:"代码构建 UI 流式 API（panel/button/…/child()/end()/build()）", link:"api/03-ui.md#34-uibuilder--代码构建-ui流式-api", tag:"UI" },
+{ cat:"UI", name:"UiManager", file:"ui/ui_manager.h", desc:"持有根 + 输入分发 + loadFromFile/setRoot/clear", link:"api/03-ui.md#35-uimanager--持有根--分发输入", tag:"UI" },
+{ cat:"UI", name:"UiRenderContext", file:"ui/ui_element.h", desc:"UI 绘制所需 Vulkan 句柄集合", link:"api/03-ui.md#35-uimanager--持有根--分发输入", tag:"UI" },
+{ cat:"UI", name:"UiLoader", file:"ui/ui_loader.h", desc:"JSON → UI 树：loadFromText/File + bindEvents", link:"api/03-ui.md#36-uiloader--json--ui-元素树", tag:"UI" },
+{ cat:"UI", name:"UiBindings", file:"ui/ui_loader.h", desc:"事件绑定表（on_click/on_input/on_value_changed…）", link:"api/03-ui.md#36-uiloader--json--ui-元素树", tag:"UI" },
+
+// ── ECS ───────────────────────────────────────────────
+{ cat:"ECS", name:"Coordinator", file:"ecs/coordinator.h", desc:"EnTT 封装：实体/组件/视图/系统/事件", link:"api/04-ecs.md#41-coordinator--entitybuilder", tag:"ECS" },
+{ cat:"ECS", name:"EntityBuilder", file:"ecs/coordinator.h", desc:"链式实体创建：.with<T>().build()", link:"api/04-ecs.md#41-coordinator--entitybuilder", tag:"ECS" },
+{ cat:"ECS", name:"Transform", file:"ecs/components.h", desc:"位置/旋转/缩放 + modelMatrix()", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Movement", file:"ecs/components.h", desc:"速度/角速度", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Mesh3DComponent", file:"ecs/components.h", desc:"持有 unique_ptr<Mesh3D>", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Shape2DComponent", file:"ecs/components.h", desc:"持有 unique_ptr<Shape>", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"TextComponent", file:"ecs/components.h", desc:"持有 unique_ptr<TextRenderer>", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Tag", file:"ecs/components.h", desc:"实体名（findByName）", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Lifetime", file:"ecs/components.h", desc:"生命周期倒计时（<0 永久）", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Camera", file:"ecs/components.h", desc:"相机：位置/yaw/pitch/fov + view/proj 矩阵 + flyEnabled", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Parent", file:"ecs/components.h", desc:"父子层级（local 变换）", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Input", file:"ecs/components.h", desc:"输入组件（移动/旋转速度）", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Spawner", file:"ecs/components.h", desc:"生成器：粒子/立方体 + 周期/数量/随机", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Light", file:"ecs/components.h", desc:"灯光：方向/点/聚光 + isPrimary 主光", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Collider", file:"ecs/components.h", desc:"AABB 碰撞盒 + isTrigger/isStatic", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"Follow", file:"ecs/components.h", desc:"相机跟随：target/offset/lerp/lookAt", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"组件" },
+{ cat:"ECS", name:"MovementSystem", file:"ecs/systems.h", desc:"位置 += 速度×dt", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"CameraSystem", file:"ecs/systems.h", desc:"自由飞行 / Follow 跟随 / findPrimary", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"ColliderSystem", file:"ecs/systems.h", desc:"AABB 碰撞 + 三态边沿事件 + 双向位置修正", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"LightingSystem", file:"ecs/systems.h", desc:"主方向光收集（primaryLight）", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"SpawnerSystem", file:"ecs/systems.h", desc:"定时生成粒子/立方体", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"DebugSystem", file:"ecs/systems.h", desc:"FPS/实体数/系统耗时上屏", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"RenderSystem3D / 2D / Text", file:"ecs/systems.h", desc:"批量渲染（onUpdate 空，drawEcs* 调用）", link:"api/04-ecs.md#43-12-个内置系统", tag:"系统" },
+{ cat:"ECS", name:"EventBus", file:"ecs/event_bus.h", desc:"发布/订阅：subscribe / publish / emit / unsubscribe", link:"api/04-ecs.md#44-eventbus", tag:"事件" },
+{ cat:"ECS", name:"CollisionEvent", file:"ecs/components.h", desc:"碰撞事件：Enter / Stay / Exit 三态", link:"api/04-ecs.md#42-14-个内置组件纯数据-pod", tag:"事件" },
+
+// ── 辅助模块 ──────────────────────────────────────────
+{ cat:"辅助模块", name:"Scene", file:"ecs/scene.h", desc:"场景抽象：name/onEnter/onExit/onUpdate + ctxAs 用户上下文", link:"api/05-aux.md#51-scene--scenemanager--多场景管理", tag:"场景" },
+{ cat:"辅助模块", name:"SceneManager", file:"ecs/scene.h", desc:"多场景注册/切换（switchTo）/更新", link:"api/05-aux.md#51-scene--scenemanager--多场景管理", tag:"场景" },
+{ cat:"辅助模块", name:"Profiler", file:"ecs/profiler.h", desc:"帧级/系统级耗时采样 + snapshot", link:"api/05-aux.md#52-profiler--性能分析", tag:"性能" },
+{ cat:"辅助模块", name:"ScopedTimer / PROFILE_SCOPE", file:"ecs/profiler.h", desc:"RAII 计时宏", link:"api/05-aux.md#52-profiler--性能分析", tag:"性能" },
+{ cat:"辅助模块", name:"InputState", file:"ecs/input_state.h", desc:"原始键鼠状态", link:"api/05-aux.md#53-inputstate--inputmapper", tag:"输入" },
+{ cat:"辅助模块", name:"InputMapper", file:"ecs/input_state.h", desc:"语义动作映射 + justPressed/justReleased 边沿检测", link:"api/05-aux.md#53-inputstate--inputmapper", tag:"输入" },
+{ cat:"辅助模块", name:"AssetManager", file:"ecs/asset_manager.h", desc:"GPU 资源工厂：createCube/Sphere/Circle + 模板注册", link:"api/05-aux.md#54-assetmanager--资源工厂", tag:"资源" },
+{ cat:"辅助模块", name:"PrefabRegistry", file:"ecs/prefab.h", desc:"预制件注册表：按名字实例化实体", link:"api/05-aux.md#55-prefabregistry--预制件", tag:"预制件" },
+{ cat:"辅助模块", name:"PrefabCtx", file:"ecs/prefab.h", desc:"预制件上下文（userData: std::any）", link:"api/05-aux.md#55-prefabregistry--预制件", tag:"预制件" },
+];
+
+// ============ 渲染逻辑 ============
+const catsEl = document.getElementById("cats");
+const listEl = document.getElementById("list");
+const statEl = document.getElementById("stat");
+const qEl = document.getElementById("q");
+
+// 分类树：分类 → 子分组（从数据生成）
+const CATS = [
+  { key:"all", label:"全部", filter:null },
+  { key:"渲染引擎", label:"⭐ 渲染引擎 v1.0.2", filter:c=>c.cat==="渲染引擎" },
+  { key:"逻辑系统", label:"逻辑系统 v1.0.2", filter:c=>c.cat==="逻辑系统" },
+  { key:"应用与核心", label:"应用与渲染核心", filter:c=>c.cat==="应用与核心" },
+  { key:"图形内容", label:"图形内容 (2D/3D/文字)", filter:c=>c.cat==="图形内容" },
+  { key:"UI", label:"UI 系统", filter:c=>c.cat==="UI" },
+  { key:"ECS", label:"ECS 实体组件系统", filter:c=>c.cat==="ECS" },
+  { key:"辅助模块", label:"辅助模块", filter:c=>c.cat==="辅助模块" },
+];
+
+let activeCat = "all";
+
+function renderCats() {
+  catsEl.innerHTML = "";
+  CATS.forEach(c => {
+    const n = c.filter ? DATA.filter(c.filter).length : DATA.length;
+    const b = document.createElement("button");
+    b.className = c.key === activeCat ? "active" : "";
+    b.innerHTML = `<span>${c.label}</span><span class="count">${n}</span>`;
+    b.onclick = () => { activeCat = c.key; renderCats(); renderList(); };
+    catsEl.appendChild(b);
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function renderList() {
+  const q = qEl.value.trim().toLowerCase();
+  const cat = CATS.find(c => c.key === activeCat);
+  let items = cat.filter ? DATA.filter(cat.filter) : DATA.slice();
+  if (q) {
+    items = items.filter(i =>
+      (i.name+" "+i.file+" "+i.desc+" "+i.cat+" "+(i.tag||"")).toLowerCase().includes(q)
+    );
+  }
+  // 按分类分组展示
+  const groups = {};
+  items.forEach(i => { (groups[i.cat] = groups[i.cat] || []).push(i); });
+  statEl.textContent = `${items.length} / ${DATA.length} 条`;
+  if (!items.length) { listEl.innerHTML = `<div class="empty">未找到匹配的 API，试试其他关键字（如 bloom / shadow / ui / ecs）</div>`; return; }
+  let html = "";
+  Object.keys(groups).forEach(g => {
+    html += `<div class="group"><h2>${escapeHtml(g)}</h2><div class="grid">`;
+    groups[g].forEach(i => {
+      html += `<a class="card" href="${i.link}" title="打开文档：${escapeHtml(i.link)}">
+        <div class="name">${escapeHtml(i.name)}</div>
+        <div class="file">${escapeHtml(i.file)}</div>
+        <div class="desc">${escapeHtml(i.desc)}</div>
+        ${i.tag ? `<span class="tag">${escapeHtml(i.tag)}</span>` : ""}
+      </a>`;
+    });
+    html += `</div></div>`;
+  });
+  listEl.innerHTML = html;
+}
+
+qEl.addEventListener("input", renderList);
+renderCats();
+renderList();
+</script>
+</body>
+</html>

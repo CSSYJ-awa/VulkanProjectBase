@@ -16,6 +16,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <map>
 
 // 绘制 UI 所需的 Vulkan 上下文（由 VulkanApp 在每帧填充）
 struct UiRenderContext
@@ -51,6 +52,9 @@ public:
 
     void setPosition(float x, float y) { m_x = x; m_y = y; markDirty(); }
     void setSize(float w, float h)      { m_width = w; m_height = h; markDirty(); }
+    // v1.2：一次性设置位置 + 尺寸（代码构建 UI 常用便利方法）
+    void setRect(float x, float y, float w, float h)
+    { m_x = x; m_y = y; m_width = w; m_height = h; markDirty(); }
     // 平移自身及所有子节点（递归）
     void translate(float dx, float dy);
     float x() const { return m_x; }
@@ -79,6 +83,17 @@ public:
     // 按名称查找子节点（深度优先）
     UiElement* findByName(const std::string& name);
 
+    // ---- JSON 事件名绑定 ----
+    // 记录 JSON 中 on_xxx 字段的事件名（如 on_click="btn_quit"），
+    // 运行时由 UiLoader::bindEvents 依据事件名查表绑定真实回调。
+    void setNamedEvent(const std::string& key, const std::string& name)
+    { m_namedEvents[key] = name; }
+    const std::string* namedEvent(const std::string& key) const
+    {
+        auto it = m_namedEvents.find(key);
+        return it != m_namedEvents.end() ? &it->second : nullptr;
+    }
+
 protected:
     // 子类重写：绘制自身内容（不含子节点）
     virtual void drawSelf(const UiRenderContext& ctx);
@@ -105,6 +120,9 @@ private:
     float m_x = 0.0f, m_y = 0.0f;
     float m_width = 0.0f, m_height = 0.0f;
     bool  m_visible = true;
+
+    // JSON on_xxx 命名事件：key = "on_click" 等，value = 事件名（由 bindEvents 查表绑定）
+    std::map<std::string, std::string> m_namedEvents;
 
     std::vector<std::unique_ptr<UiElement>> m_children;
     UiElement* m_parent = nullptr;

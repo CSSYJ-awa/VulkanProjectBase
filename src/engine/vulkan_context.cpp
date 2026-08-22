@@ -2,8 +2,9 @@
  * VulkanContext 实现
  */
 #include "vulkan_context.h"
+#include "vulkan_util.h"
+#include "logger.h"
 
-#include <iostream>
 #include <stdexcept>
 #include <algorithm>
 #include <set>
@@ -105,18 +106,23 @@ VulkanContext::VulkanContext(VkInstance instance, GLFWwindow* window,
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    m_depthFormat = findDepthFormat();
     createRenderPass();
+    createDepthResources();
     createFramebuffers();
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
 
-    std::cout << "[VulkanContext] 渲染后端初始化完成。" << std::endl;
+    LOG_INFO("Vulkan", "ctor", "渲染后端初始化完成");
 }
 
 VulkanContext::~VulkanContext()
 {
     if (m_device != VK_NULL_HANDLE) vkDeviceWaitIdle(m_device);
+
+    // 设备已空闲，释放此前登记的所有延迟销毁资源
+    vulkan_util::flushAllDeferredDestroy(m_device);
 
     cleanupSwapChain();
 
@@ -131,7 +137,7 @@ VulkanContext::~VulkanContext()
     if (m_device)      vkDestroyDevice(m_device, nullptr);
     if (m_surface)     vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
-    std::cout << "[VulkanContext] 已销毁。" << std::endl;
+    LOG_INFO("Vulkan", "dtor", "已销毁");
 }
 
 // ============================================================================
@@ -158,7 +164,7 @@ void VulkanContext::pickPhysicalDevice()
             m_physicalDevice = d;
             VkPhysicalDeviceProperties p;
             vkGetPhysicalDeviceProperties(d, &p);
-            std::cout << "[VulkanContext] 选择 GPU: " << p.deviceName << std::endl;
+            LOG_INFO("Vulkan", "pickPhysicalDevice", "选择 GPU: %s", p.deviceName);
             return;
         }
     }
@@ -311,30 +317,115 @@ void VulkanContext::createRenderPass()
     caRef.attachment = 0;
     caRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // 深度附件：3D 遮挡判定（仅 Pipeline3D 启用深度测试）
+    VkAttachmentDescription da{};
+    da.format = m_depthFormat;
+    da.samples = VK_SAMPLE_COUNT_1_BIT;
+    da.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    da.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    da.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    da.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    da.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    da.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference daRef{};
+    daRef.attachment = 1;
+    daRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription sp{};
     sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     sp.colorAttachmentCount = 1;
     sp.pColorAttachments = &caRef;
+    sp.pDepthStencilAttachment = &daRef;
 
-    VkSubpassDependency dep{};
-    dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dep.dstSubpass = 0;
-    dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep.srcAccessMask = 0;
-    dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    // 颜色附件：绘制阶段等待上一帧呈现完成后才可写
+    VkSubpassDependency colorDep{};
+    colorDep.srcSubpass = VK_SUBPASS_EXTERNAL;
+    colorDep.dstSubpass = 0;
+    colorDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    colorDep.srcAccessMask = 0;
+    colorDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    colorDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    // 深度附件：早期/晚期深度测试阶段需要读到上帧呈现完成后的深度，需同步
+    VkSubpassDependency depthDep{};
+    depthDep.srcSubpass = VK_SUBPASS_EXTERNAL;
+    depthDep.dstSubpass = 0;
+    depthDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    depthDep.srcAccessMask = 0;
+    depthDep.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    depthDep.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    VkAttachmentDescription attachments[] = { ca, da };
+    VkSubpassDependency deps[] = { colorDep, depthDep };
 
     VkRenderPassCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    ci.attachmentCount = 1;
-    ci.pAttachments = &ca;
+    ci.attachmentCount = 2;
+    ci.pAttachments = attachments;
     ci.subpassCount = 1;
     ci.pSubpasses = &sp;
-    ci.dependencyCount = 1;
-    ci.pDependencies = &dep;
+    ci.dependencyCount = 2;
+    ci.pDependencies = deps;
 
     if (vkCreateRenderPass(m_device, &ci, nullptr, &m_renderPass) != VK_SUCCESS)
         throw std::runtime_error("vkCreateRenderPass 失败");
+}
+
+void VulkanContext::createDepthResources()
+{
+    VkImageCreateInfo ici{};
+    ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.extent = { m_swapChainExtent.width, m_swapChainExtent.height, 1 };
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.format = m_depthFormat;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ici.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &ici, nullptr, &m_depthImage) != VK_SUCCESS)
+        throw std::runtime_error("创建深度图像失败");
+
+    VkMemoryRequirements memReq;
+    vkGetImageMemoryRequirements(m_device, m_depthImage, &memReq);
+
+    VkMemoryAllocateInfo mai{};
+    mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    mai.allocationSize = memReq.size;
+    mai.memoryTypeIndex = vulkan_util::findMemoryType(
+        m_physicalDevice, memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(m_device, &mai, nullptr, &m_depthMemory) != VK_SUCCESS)
+        throw std::runtime_error("分配深度图像内存失败");
+
+    vkBindImageMemory(m_device, m_depthImage, m_depthMemory, 0);
+
+    m_depthImageView = vulkan_util::createImageView2D(m_device, m_depthImage,
+                                                      m_depthFormat,
+                                                      VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
+VkFormat VulkanContext::findDepthFormat()
+{
+    // 按优先级尝试：32 位浮点深度 > 24 位深度+8 位模板 > 16 位深度
+    const VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM
+    };
+    for (VkFormat f : candidates)
+    {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(m_physicalDevice, f, &props);
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+            return f;
+    }
+    throw std::runtime_error("找不到支持的深度格式");
 }
 
 void VulkanContext::createFramebuffers()
@@ -342,11 +433,11 @@ void VulkanContext::createFramebuffers()
     m_swapChainFramebuffers.resize(m_swapChainImageViews.size());
     for (size_t i = 0; i < m_swapChainImageViews.size(); ++i)
     {
-        VkImageView attachments[] = { m_swapChainImageViews[i] };
+        VkImageView attachments[] = { m_swapChainImageViews[i], m_depthImageView };
         VkFramebufferCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         ci.renderPass = m_renderPass;
-        ci.attachmentCount = 1;
+        ci.attachmentCount = 2;
         ci.pAttachments = attachments;
         ci.width = m_swapChainExtent.width;
         ci.height = m_swapChainExtent.height;
@@ -426,6 +517,10 @@ uint32_t VulkanContext::beginFrame()
 {
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
+    // 安全点：等待 fence 完成即代表 GPU 已用完上一帧所有缓冲，
+    // 此刻统一释放延迟销毁队列中的 GPU 资源（避免 DEVICE_LOST）
+    vulkan_util::flushDeferredDestroy(m_device);
+
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapChain, UINT64_MAX,
         m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
@@ -457,9 +552,11 @@ uint32_t VulkanContext::beginFrame()
     rbi.renderPass = m_renderPass;
     rbi.framebuffer = m_swapChainFramebuffers[imageIndex];
     rbi.renderArea.extent = m_swapChainExtent;
-    VkClearValue cv{ { {0.05f, 0.05f, 0.08f, 1.0f} } };
-    rbi.clearValueCount = 1;
-    rbi.pClearValues = &cv;
+    VkClearValue cvs[2];
+    cvs[0].color        = { {0.05f, 0.05f, 0.08f, 1.0f} };
+    cvs[1].depthStencil = { 1.0f, 0 };
+    rbi.clearValueCount = 2;
+    rbi.pClearValues = cvs;
     vkCmdBeginRenderPass(m_commandBuffers[m_currentFrame], &rbi,
                          VK_SUBPASS_CONTENTS_INLINE);
 
@@ -492,11 +589,12 @@ void VulkanContext::endFrame()
     VkResult submitResult = vkQueueSubmit(m_graphicsQueue, 1, &si, m_inFlightFences[m_currentFrame]);
     if (submitResult != VK_SUCCESS)
     {
-        std::cerr << "[VulkanContext] vkQueueSubmit 失败，VkResult=" << submitResult;
-        if (submitResult == VK_ERROR_DEVICE_LOST)         std::cerr << " (DEVICE_LOST)";
-        else if (submitResult == VK_ERROR_OUT_OF_HOST_MEMORY)   std::cerr << " (OUT_OF_HOST_MEMORY)";
-        else if (submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY) std::cerr << " (OUT_OF_DEVICE_MEMORY)";
-        std::cerr << std::endl;
+        const char* reason = "UNKNOWN";
+        if (submitResult == VK_ERROR_DEVICE_LOST)              reason = "DEVICE_LOST";
+        else if (submitResult == VK_ERROR_OUT_OF_HOST_MEMORY)  reason = "OUT_OF_HOST_MEMORY";
+        else if (submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY) reason = "OUT_OF_DEVICE_MEMORY";
+        LOG_ERROR("Vulkan", "endFrame", "vkQueueSubmit 失败 VkResult=%d (%s)",
+                  static_cast<int>(submitResult), reason);
         throw std::runtime_error("vkQueueSubmit 失败");
     }
 
@@ -539,6 +637,18 @@ void VulkanContext::cleanupSwapChain()
     m_swapChainFramebuffers.clear();
     m_swapChainImageViews.clear();
     m_swapChainImages.clear();
+
+    cleanupDepthResources();
+}
+
+void VulkanContext::cleanupDepthResources()
+{
+    if (m_depthImageView) vkDestroyImageView(m_device, m_depthImageView, nullptr);
+    if (m_depthImage)     vkDestroyImage(m_device, m_depthImage, nullptr);
+    if (m_depthMemory)    vkFreeMemory(m_device, m_depthMemory, nullptr);
+    m_depthImageView = VK_NULL_HANDLE;
+    m_depthImage     = VK_NULL_HANDLE;
+    m_depthMemory    = VK_NULL_HANDLE;
 }
 
 void VulkanContext::recreateSwapChain()
@@ -555,6 +665,7 @@ void VulkanContext::recreateSwapChain()
     cleanupSwapChain();
     createSwapChain();
     createImageViews();
+    createDepthResources();
     createFramebuffers();
 
     // 重新分配命令缓冲以匹配新的帧缓冲数量

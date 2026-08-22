@@ -20,5 +20,13 @@ bin/
 .DS_Store
 Thumbs.db
 
+# --- 第三方库（CMake FetchContent / 手动下载）---
+# EnTT 由 CMake 首次配置时自动下载到 third_party/entt/
+third_party/entt/
+third_party/entt-*/
+
+# --- FetchContent 缓存 ---
+_deps/
+
 # --- 脚本生成文件 ---
 scripts/install_log.txt

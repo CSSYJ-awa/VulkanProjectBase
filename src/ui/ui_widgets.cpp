@@ -4,6 +4,7 @@
 #include "ui_widgets.h"
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <algorithm>
 
 // 全局唯一焦点文本框
 UiTextBox* UiTextBox::s_focused = nullptr;
@@ -84,7 +85,7 @@ void UiElement::drawSelf(const UiRenderContext& ctx)
         // 仅更新颜色（push constant）
         m_bg.setColor(m_color[0], m_color[1], m_color[2], m_color[3]);
     }
-    m_bg.draw(ctx.commandBuffer, ctx.pipelineFilled, ctx.pipelineLayout, ctx.viewport, ctx.scissor);
+    m_bg.drawVBOOnly(ctx.commandBuffer, ctx.pipelineLayout);
 }
 
 bool UiElement::handleMouseEvent(const UiMouseEvent& e)
@@ -125,7 +126,10 @@ void UiText::setText(const std::string& t)
 
 void UiText::drawSelf(const UiRenderContext& ctx)
 {
-    // 文字背景仍可由父类绘制（若 alpha>0），此处绘制标签
+    // 先绘制背景矩形（alpha>0 时基类会渲染，如 UiTextBox 的深色背景）
+    UiElement::drawSelf(ctx);
+
+    // 此处绘制文字标签
     float labelX = x();
     float labelY = y();
     bool extentChanged = (m_lastLabelExtentW != ctx.extent.width ||
@@ -138,7 +142,7 @@ void UiText::drawSelf(const UiRenderContext& ctx)
         m_label.setText(m_text);
         m_label.setPixelSize(m_fontPx, ctx.extent.width);
         m_label.setPixelPosition(labelX, labelY, ctx.extent.width, ctx.extent.height);
-        m_label.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+        m_label.setColor(m_textColor[0], m_textColor[1], m_textColor[2], m_textColor[3]);
         m_label.upload(ctx.device, ctx.physicalDevice, ctx.commandPool, ctx.queue);
         m_labelUploaded = true;
         m_dirty = false;
@@ -153,13 +157,14 @@ void UiText::drawSelf(const UiRenderContext& ctx)
         if (extentChanged)
             m_label.setPixelSize(m_fontPx, ctx.extent.width);
         m_label.setPixelPosition(labelX, labelY, ctx.extent.width, ctx.extent.height);
+        m_label.setColor(m_textColor[0], m_textColor[1], m_textColor[2], m_textColor[3]);
         m_label.upload(ctx.device, ctx.physicalDevice, ctx.commandPool, ctx.queue);
         m_lastLabelX = labelX;
         m_lastLabelY = labelY;
         m_lastLabelExtentW = ctx.extent.width;
         m_lastLabelExtentH = ctx.extent.height;
     }
-    m_label.draw(ctx.commandBuffer, ctx.pipelineFilled, ctx.pipelineLayout, ctx.viewport, ctx.scissor);
+    m_label.drawVBOOnly(ctx.commandBuffer, ctx.pipelineLayout);
 }
 
 // ============================================================================
@@ -214,6 +219,20 @@ void UiButton::onHoverLeave()
 
 bool UiButton::handleMouseEventSelf(const UiMouseEvent& e)
 {
+    // 释放事件必须无条件复位按下状态：即使用户在按钮上按下后拖出再释放，
+    // 也不能让按钮卡在 pressed 状态（否则颜色无法恢复、点击回调被吞掉）
+    if (e.button == 0 && !e.pressed && m_pressed)
+    {
+        m_pressed = false;
+        // 悬停状态决定回到的颜色
+        m_color[0] = m_hovered ? m_hoverColor[0] : m_normalColor[0];
+        m_color[1] = m_hovered ? m_hoverColor[1] : m_normalColor[1];
+        m_color[2] = m_hovered ? m_hoverColor[2] : m_normalColor[2];
+        markDirty();
+        // 仅在按钮内释放才触发点击
+        if (contains(e.x, e.y)) onClick();
+        return true;
+    }
     if (!contains(e.x, e.y)) return false;
 
     if (e.button == 0 && e.pressed)
@@ -223,17 +242,6 @@ bool UiButton::handleMouseEventSelf(const UiMouseEvent& e)
         m_color[1] = m_pressedColor[1];
         m_color[2] = m_pressedColor[2];
         markDirty();
-        return true;
-    }
-    if (e.button == 0 && !e.pressed && m_pressed)
-    {
-        m_pressed = false;
-        // 悬停状态决定回到的颜色
-        m_color[0] = m_hovered ? m_hoverColor[0] : m_normalColor[0];
-        m_color[1] = m_hovered ? m_hoverColor[1] : m_normalColor[1];
-        m_color[2] = m_hovered ? m_hoverColor[2] : m_normalColor[2];
-        markDirty();
-        onClick();
         return true;
     }
     return false;
@@ -275,7 +283,7 @@ void UiButton::drawSelf(const UiRenderContext& ctx)
         m_lastLabelExtentW = ctx.extent.width;
         m_lastLabelExtentH = ctx.extent.height;
     }
-    m_label.draw(ctx.commandBuffer, ctx.pipelineFilled, ctx.pipelineLayout, ctx.viewport, ctx.scissor);
+    m_label.drawVBOOnly(ctx.commandBuffer, ctx.pipelineLayout);
 }
 
 // ============================================================================
@@ -335,12 +343,10 @@ bool UiTextBox::handleKeyEventSelf(const UiKeyEvent& e)
 {
     if (!m_focused) return false;
 
-    // 1) 文本字符输入（来自 onChar 回调）
-    if (e.character != 0)
+    // 1) 文本字符输入（来自 onChar 回调，UTF-8 编码的完整字符串）
+    if (!e.character.empty())
     {
-        std::string s;
-        s += e.character;
-        onTextInput(s);
+        onTextInput(e.character);
         return true;
     }
 
@@ -416,6 +422,9 @@ bool UiPanel::handleMouseEventSelf(const UiMouseEvent& e)
 {
     if (!contains(e.x, e.y)) return false;
 
+    // v1.2：拖拽关闭时不响应按下（仍允许事件冒泡以让子节点接收）
+    if (!m_draggableEnabled) return false;
+
     if (e.button == 0)
     {
         if (e.pressed)
@@ -436,3 +445,222 @@ bool UiPanel::handleMouseEventSelf(const UiMouseEvent& e)
 
 // 注意：UiPanel 的拖拽需要每帧更新位置——这里通过 manager 调用 update(dt) 时
 // 检查 m_dragging 并根据当前鼠标位置移动。简化：在 manager 中处理。
+
+// ============================================================================
+// UiCheckbox 实现
+// ============================================================================
+
+UiCheckbox::UiCheckbox()
+{
+    // 方框背景色
+    m_color[0] = m_boxColor[0];
+    m_color[1] = m_boxColor[1];
+    m_color[2] = m_boxColor[2];
+    m_color[3] = m_boxColor[3];
+}
+
+void UiCheckbox::setChecked(bool v)
+{
+    if (m_checked == v) return;
+    m_checked = v;
+    markDirty();
+    if (m_onChecked) m_onChecked(m_checked);
+}
+
+void UiCheckbox::setBoxColor(float r, float g, float b, float a)
+{
+    m_boxColor[0] = r; m_boxColor[1] = g;
+    m_boxColor[2] = b; m_boxColor[3] = a;
+    m_color[0] = r; m_color[1] = g; m_color[2] = b; m_color[3] = a;
+    markDirty();
+}
+
+void UiCheckbox::setCheckColor(float r, float g, float b, float a)
+{
+    m_checkColor[0] = r; m_checkColor[1] = g;
+    m_checkColor[2] = b; m_checkColor[3] = a;
+    markDirty();
+}
+
+void UiCheckbox::onClick()
+{
+    setChecked(!m_checked);
+}
+
+bool UiCheckbox::handleMouseEventSelf(const UiMouseEvent& e)
+{
+    if (!contains(e.x, e.y)) return false;
+
+    if (e.button == 0 && e.pressed)
+    {
+        m_pressed = true;
+        return true;
+    }
+    if (e.button == 0 && !e.pressed && m_pressed)
+    {
+        m_pressed = false;
+        onClick();
+        return true;
+    }
+    return false;
+}
+
+void UiCheckbox::updateCheckMark(const UiRenderContext& ctx)
+{
+    // 对勾为内缩约 25% 的实心方块（居中）
+    float inset = std::min(width(), height()) * 0.25f;
+    float nx0, ny0, nx1, ny1;
+    pixelToNdc(x() + inset, y() + inset, ctx.extent.width, ctx.extent.height, nx0, ny0);
+    pixelToNdc(x() + width() - inset, y() + height() - inset,
+               ctx.extent.width, ctx.extent.height, nx1, ny1);
+    float cx = (nx0 + nx1) * 0.5f;
+    float cy = (ny0 + ny1) * 0.5f;
+    float w  = nx1 - nx0;
+    float h  = ny1 - ny0;
+
+    bool extentChanged = (m_lastExtentW != ctx.extent.width ||
+                          m_lastExtentH != ctx.extent.height);
+    if (m_dirty || !m_markUploaded || extentChanged)
+    {
+        m_mark.setBounds(cx, cy, w, h, m_checkColor[0], m_checkColor[1], m_checkColor[2]);
+        m_mark.setColor(m_checkColor[0], m_checkColor[1], m_checkColor[2], m_checkColor[3]);
+        m_mark.upload(ctx.device, ctx.physicalDevice, ctx.commandPool, ctx.queue);
+        m_markUploaded = true;
+        m_dirty = false;
+        m_lastExtentW = ctx.extent.width;
+        m_lastExtentH = ctx.extent.height;
+    }
+    else
+    {
+        m_mark.setColor(m_checkColor[0], m_checkColor[1], m_checkColor[2], m_checkColor[3]);
+    }
+    m_mark.drawVBOOnly(ctx.commandBuffer, ctx.pipelineLayout);
+}
+
+void UiCheckbox::drawSelf(const UiRenderContext& ctx)
+{
+    // 方框背景
+    UiElement::drawSelf(ctx);
+    // 选中时绘制对勾
+    if (m_checked)
+        updateCheckMark(ctx);
+}
+
+// ============================================================================
+// UiSlider 实现
+// ============================================================================
+
+UiSlider::UiSlider()
+{
+    // 轨道背景色
+    m_color[0] = m_trackColor[0];
+    m_color[1] = m_trackColor[1];
+    m_color[2] = m_trackColor[2];
+    m_color[3] = m_trackColor[3];
+}
+
+void UiSlider::setValue(float v)
+{
+    float old = m_value;
+    m_value = v;
+    clampValue();
+    if (m_value != old)
+    {
+        markDirty();
+        if (m_onValueChanged) m_onValueChanged(m_value);
+    }
+}
+
+void UiSlider::clampValue()
+{
+    if (m_value < m_min) m_value = m_min;
+    if (m_value > m_max) m_value = m_max;
+}
+
+void UiSlider::setTrackColor(float r, float g, float b, float a)
+{
+    m_trackColor[0] = r; m_trackColor[1] = g;
+    m_trackColor[2] = b; m_trackColor[3] = a;
+    m_color[0] = r; m_color[1] = g; m_color[2] = b; m_color[3] = a;
+    markDirty();
+}
+
+void UiSlider::setKnobColor(float r, float g, float b, float a)
+{
+    m_knobColor[0] = r; m_knobColor[1] = g;
+    m_knobColor[2] = b; m_knobColor[3] = a;
+    markDirty();
+}
+
+void UiSlider::setValueFromPixelX(float px)
+{
+    float span = (m_max - m_min);
+    if (span <= 0.0f) { setValue(m_min); return; }
+    float t = (px - x()) / width();
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    setValue(m_min + t * span);
+}
+
+bool UiSlider::handleMouseEventSelf(const UiMouseEvent& e)
+{
+    if (!contains(e.x, e.y)) return false;
+
+    if (e.button == 0 && e.pressed)
+    {
+        m_pressed = true;
+        // 点击轨道任意位置：直接跳转
+        setValueFromPixelX(e.x);
+        return true;
+    }
+    if (e.button == 0 && !e.pressed && m_pressed)
+    {
+        m_pressed = false;
+        return true;
+    }
+    return false;
+}
+
+void UiSlider::updateKnob(const UiRenderContext& ctx)
+{
+    // 游标为与轨道同高的方块，中心位于值对应位置
+    float knobW = height();
+    float t = (m_max > m_min) ? (m_value - m_min) / (m_max - m_min) : 0.0f;
+    float cxPx = x() + t * (width() - knobW) + knobW * 0.5f;
+    float cyPx = y() + height() * 0.5f;
+
+    float nx0, ny0, nx1, ny1;
+    pixelToNdc(cxPx - knobW * 0.5f, cyPx - height() * 0.5f,
+               ctx.extent.width, ctx.extent.height, nx0, ny0);
+    pixelToNdc(cxPx + knobW * 0.5f, cyPx + height() * 0.5f,
+               ctx.extent.width, ctx.extent.height, nx1, ny1);
+    float cx = (nx0 + nx1) * 0.5f;
+    float cy = (ny0 + ny1) * 0.5f;
+    float w  = nx1 - nx0;
+    float h  = ny1 - ny0;
+
+    bool extentChanged = (m_lastExtentW != ctx.extent.width ||
+                          m_lastExtentH != ctx.extent.height);
+    if (m_dirty || !m_knobUploaded || extentChanged)
+    {
+        m_knob.setBounds(cx, cy, w, h, m_knobColor[0], m_knobColor[1], m_knobColor[2]);
+        m_knob.setColor(m_knobColor[0], m_knobColor[1], m_knobColor[2], m_knobColor[3]);
+        m_knob.upload(ctx.device, ctx.physicalDevice, ctx.commandPool, ctx.queue);
+        m_knobUploaded = true;
+        m_dirty = false;
+        m_lastExtentW = ctx.extent.width;
+        m_lastExtentH = ctx.extent.height;
+    }
+    else
+    {
+        m_knob.setColor(m_knobColor[0], m_knobColor[1], m_knobColor[2], m_knobColor[3]);
+    }
+    m_knob.drawVBOOnly(ctx.commandBuffer, ctx.pipelineLayout);
+}
+
+void UiSlider::drawSelf(const UiRenderContext& ctx)
+{
+    // 轨道背景
+    UiElement::drawSelf(ctx);
+    // 游标
+    updateKnob(ctx);
+}

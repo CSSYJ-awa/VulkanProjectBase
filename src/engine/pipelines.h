@@ -23,9 +23,11 @@ public:
 
     // shaderDir 应包含 basic.vert.spv / basic.frag.spv
     // topology 指定图元拓扑（默认三角形列表，线段类图形用 LINE_LIST）
+    // samples：多重采样级别（v1.0.2 MSAA；默认 1x）
     void create(VkDevice device, VkRenderPass renderPass,
                 VkExtent2D extent, const std::string& shaderDir,
-                VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+                VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
 
     VkPipeline       pipeline()       const { return m_pipeline; }
     VkPipelineLayout pipelineLayout() const { return m_layout; }
@@ -49,7 +51,8 @@ public:
     Pipeline3D& operator=(const Pipeline3D&) = delete;
 
     void create(VkDevice device, VkRenderPass renderPass,
-                VkExtent2D extent, const std::string& shaderDir);
+                VkExtent2D extent, const std::string& shaderDir,
+                VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
 
     VkPipeline            pipeline()             const { return m_pipeline; }
     VkPipelineLayout      pipelineLayout()       const { return m_layout; }
@@ -75,7 +78,8 @@ public:
     PipelineText& operator=(const PipelineText&) = delete;
 
     void create(VkDevice device, VkRenderPass renderPass,
-                VkExtent2D extent, const std::string& shaderDir);
+                VkExtent2D extent, const std::string& shaderDir,
+                VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
 
     VkPipeline            pipeline()             const { return m_pipeline; }
     VkPipelineLayout      pipelineLayout()       const { return m_layout; }

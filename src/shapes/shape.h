@@ -19,6 +19,8 @@
  */
 #pragma once
 
+#include "../render/render_device.h"
+
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cstdint>
@@ -40,10 +42,8 @@ public:
     void upload(VkDevice device, VkPhysicalDevice pd,
                 VkCommandPool pool, VkQueue queue);
 
-    // 录制绘制命令到 cmd（绑定 pipeline + viewport/scissor + 绘制）
-    void draw(VkCommandBuffer cmd, VkPipeline pipeline,
-              VkPipelineLayout layout,
-              const VkViewport& viewport, const VkRect2D& scissor) const;
+    // 便捷重载（v1.0.1）：从 RenderDevice 一次性获取 device/pd/pool/queue
+    void upload(const RenderDevice& dev);
 
     // 轻量绘制：仅绑定 VB + push constant + Draw。
     // 用于批量绘制，调用者须保证 pipeline/viewport/scissor 已预先设置。

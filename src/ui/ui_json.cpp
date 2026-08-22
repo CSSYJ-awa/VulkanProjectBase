@@ -43,8 +43,41 @@ private:
         while (m_pos < m_text.size())
         {
             char c = m_text[m_pos];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') ++m_pos;
-            else break;
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+            {
+                ++m_pos;
+            }
+            else if (c == '/' && m_pos + 1 < m_text.size())
+            {
+                // 支持 JSONC 风格注释：'//' 行注释 和 '/* */' 块注释
+                char next = m_text[m_pos + 1];
+                if (next == '/')
+                {
+                    // 行注释：跳到行尾
+                    m_pos += 2;
+                    while (m_pos < m_text.size() &&
+                           m_text[m_pos] != '\n' && m_text[m_pos] != '\r')
+                        ++m_pos;
+                }
+                else if (next == '*')
+                {
+                    // 块注释：跳到 '*/'
+                    m_pos += 2;
+                    while (m_pos + 1 < m_text.size() &&
+                           !(m_text[m_pos] == '*' && m_text[m_pos + 1] == '/'))
+                        ++m_pos;
+                    if (m_pos + 1 < m_text.size()) m_pos += 2;
+                    else fail("块注释 '/*' 未闭合");
+                }
+                else
+                {
+                    break;  // 单 '/' 不是注释，留给后续解析处理（通常会失败）
+                }
+            }
+            else
+            {
+                break;
+            }
         }
     }
 

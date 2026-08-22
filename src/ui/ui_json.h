@@ -2,9 +2,10 @@
  * UiJson —— 极简 JSON 解析器（递归下降）
  *
  * 仅支持 UI 配置所需子集：object / array / string / number / bool / null。
- * 不支持注释、尾随逗号、科学计数法以外的数字语法。
+ * 支持 JSONC 风格注释（// 行注释、/* 块注释）与尾随逗号。
+ * 不支持科学计数法以外的数字语法。
  *
- * 用途：解析 ui_config.json，构建 UI 元素树。
+ * 用途：解析 ui_config.json / config.json，构建 UI 元素树或运行时配置。
  */
 #pragma once
 

@@ -31,7 +31,7 @@ struct UiKeyEvent
     int   scancode;
     int   action;   // GLFW_PRESS / GLFW_RELEASE / GLFW_REPEAT
     int   mods;
-    char  character;// 文本字符（GLFW_CHAR 回调）
+    std::string character;  // 文本字符（GLFW_CHAR 回调，UTF-8 编码；空串表示无字符）
 };
 
 // ---- 事件回调类型 ----
@@ -70,6 +70,9 @@ class IDraggable
 public:
     virtual ~IDraggable() = default;
     virtual void onDrag(float /*dx*/, float /*dy*/) {}
+    // 绝对位置拖拽回调：窗口像素坐标。面板沿用 onDrag(dx,dy) 增量方式，
+    // 滑块等需要"绝对位置→值"映射的控件重写本方法。
+    virtual void onDragAt(float /*px*/, float /*py*/) {}
     void setDragHandler(DragHandler h) { m_onDrag = std::move(h); }
     DragHandler m_onDrag;
     // 拖拽内部状态

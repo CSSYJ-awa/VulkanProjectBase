@@ -39,9 +39,11 @@ std::unique_ptr<UiElement> UiLoader::buildElement(const JsonValue& node)
 {
     std::string type = node.find("type") ? node.find("type")->asString() : "panel";
     std::unique_ptr<UiElement> e;
-    if (type == "button")  e = std::make_unique<UiButton>();
+    if (type == "button")    e = std::make_unique<UiButton>();
     else if (type == "text") e = std::make_unique<UiText>();
-    else if (type == "textbox") e = std::make_unique<UiTextBox>();
+    else if (type == "textbox")   e = std::make_unique<UiTextBox>();
+    else if (type == "slider")    e = std::make_unique<UiSlider>();
+    else if (type == "checkbox")  e = std::make_unique<UiCheckbox>();
     else /* panel */        e = std::make_unique<UiPanel>();
 
     applyCommon(e.get(), node);
@@ -62,7 +64,23 @@ std::unique_ptr<UiElement> UiLoader::buildElement(const JsonValue& node)
     if (auto* drag = node.find("draggable"))
     {
         if (auto* p = dynamic_cast<UiPanel*>(e.get()))
-            ; // IDraggable 默认即可拖拽，draggable 标志仅作记录
+        {
+            // IDraggable 默认即可拖拽，draggable 标志控制开关
+            p->setDraggable(drag->asBool(true));
+        }
+    }
+    if (auto* s = dynamic_cast<UiSlider*>(e.get()))
+    {
+        // 顺序：先范围后值（值会被 clamp 到范围内）
+        float mn = s->min(), mx = s->max();
+        if (auto* mnj = node.find("min")) mn = static_cast<float>(mnj->asNumber(mn));
+        if (auto* mxj = node.find("max")) mx = static_cast<float>(mxj->asNumber(mx));
+        s->setRange(mn, mx);
+        if (auto* val = node.find("value")) s->setValue(static_cast<float>(val->asNumber(s->value())));
+    }
+    if (auto* cb = dynamic_cast<UiCheckbox*>(e.get()))
+    {
+        if (auto* ck = node.find("checked")) cb->setChecked(ck->asBool(false));
     }
 
     // 递归构建子节点
@@ -96,4 +114,61 @@ void UiLoader::applyCommon(UiElement* e, const JsonValue& node)
         }
     }
     if (auto* v = node.find("visible")) e->setVisible(v->asBool(true));
+    if (auto* tc = node.find("text_color"))
+    {
+        if (tc->isArray() && tc->arr.size() >= 3)
+        {
+            float r = static_cast<float>(tc->arr[0]->asNumber(1.0));
+            float g = static_cast<float>(tc->arr[1]->asNumber(1.0));
+            float b = static_cast<float>(tc->arr[2]->asNumber(1.0));
+            float a = tc->arr.size() >= 4 ? static_cast<float>(tc->arr[3]->asNumber(1.0)) : 1.0f;
+            if (auto* txt = dynamic_cast<UiText*>(e)) txt->setTextColor(r, g, b, a);
+        }
+    }
+    // 事件名绑定：on_click / on_hover_enter / on_hover_leave / on_drag / on_input / on_checked / on_value_changed
+    static const char* kEventKeys[] = {
+        "on_click", "on_hover_enter", "on_hover_leave",
+        "on_drag", "on_input", "on_checked", "on_value_changed"
+    };
+    for (const char* key : kEventKeys)
+        if (auto* ev = node.find(key))
+            e->setNamedEvent(key, ev->asString());
+}
+
+void UiLoader::bindEvents(UiElement* root, const UiBindings& bindings)
+{
+    if (!root) return;
+
+    // 按事件类型分派：动态转换为对应接口并绑定回调
+    if (const std::string* name = root->namedEvent("on_click"))
+        if (auto it = bindings.clicks.find(*name); it != bindings.clicks.end())
+            if (auto* c = dynamic_cast<IClickable*>(root)) c->setClickHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_hover_enter"))
+        if (auto it = bindings.hoverEnters.find(*name); it != bindings.hoverEnters.end())
+            if (auto* h = dynamic_cast<IHoverable*>(root)) h->setHoverEnterHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_hover_leave"))
+        if (auto it = bindings.hoverLeaves.find(*name); it != bindings.hoverLeaves.end())
+            if (auto* h = dynamic_cast<IHoverable*>(root)) h->setHoverLeaveHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_drag"))
+        if (auto it = bindings.drags.find(*name); it != bindings.drags.end())
+            if (auto* d = dynamic_cast<IDraggable*>(root)) d->setDragHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_input"))
+        if (auto it = bindings.inputs.find(*name); it != bindings.inputs.end())
+            if (auto* t = dynamic_cast<ITextInput*>(root)) t->setInputHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_checked"))
+        if (auto it = bindings.checkeds.find(*name); it != bindings.checkeds.end())
+            if (auto* cb = dynamic_cast<UiCheckbox*>(root)) cb->setCheckedHandler(it->second);
+
+    if (const std::string* name = root->namedEvent("on_value_changed"))
+        if (auto it = bindings.valueChangeds.find(*name); it != bindings.valueChangeds.end())
+            if (auto* s = dynamic_cast<UiSlider*>(root)) s->setValueChangedHandler(it->second);
+
+    // 递归处理子节点
+    for (auto& c : root->childrenMut())
+        bindEvents(c.get(), bindings);
 }

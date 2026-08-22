@@ -14,16 +14,16 @@
 Shape::~Shape()
 {
     if (m_device)
-        vulkan_util::destroyBuffer(m_device, m_buffer, m_memory);
+        vulkan_util::deferDestroyBuffer(m_device, m_buffer, m_memory);
 }
 
 Shape& Shape::operator=(Shape&& o) noexcept
 {
     if (this != &o)
     {
-        // 先释放自身已有资源
+        // 先释放自身已有资源（延迟到安全点，避免 GPU use-after-free）
         if (m_device)
-            vulkan_util::destroyBuffer(m_device, m_buffer, m_memory);
+            vulkan_util::deferDestroyBuffer(m_device, m_buffer, m_memory);
         // 偷取 o 的资源
         m_vertices           = std::move(o.m_vertices);
         m_lineTopology       = o.m_lineTopology;
@@ -37,6 +37,11 @@ Shape& Shape::operator=(Shape&& o) noexcept
         m_size               = o.m_size;
     }
     return *this;
+}
+
+void Shape::upload(const RenderDevice& dev)
+{
+    upload(dev.device, dev.physicalDevice, dev.commandPool, dev.queue);
 }
 
 void Shape::upload(VkDevice device, VkPhysicalDevice pd,
@@ -57,7 +62,7 @@ void Shape::upload(VkDevice device, VkPhysicalDevice pd,
     if (m_device != device || m_buffer == VK_NULL_HANDLE || m_size != size)
     {
         if (m_device)
-            vulkan_util::destroyBuffer(m_device, m_buffer, m_memory);
+            vulkan_util::deferDestroyBuffer(m_device, m_buffer, m_memory);
         m_device = device;
         vulkan_util::createBuffer(device, pd, size,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -69,19 +74,6 @@ void Shape::upload(VkDevice device, VkPhysicalDevice pd,
     // uploadToBuffer 内部调用 vkQueueWaitIdle，确保 GPU 已完成上一帧后再更新数据
     vulkan_util::uploadToBuffer(device, pd, pool, queue,
         m_vertices.data(), size, m_buffer);
-}
-
-void Shape::draw(VkCommandBuffer cmd, VkPipeline pipeline,
-                 VkPipelineLayout layout,
-                 const VkViewport& viewport, const VkRect2D& scissor) const
-{
-    if (m_vertices.empty() || m_buffer == VK_NULL_HANDLE) return;
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    drawVBOOnly(cmd, layout);
 }
 
 void Shape::drawVBOOnly(VkCommandBuffer cmd, VkPipelineLayout layout) const
